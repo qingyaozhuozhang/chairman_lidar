@@ -1,0 +1,14 @@
+# 复制到 src/function/config/on_demand/modes/precise.yaml。
+id: 4
+name: precise
+base_mode: 1
+# 在继承的慢速模式基础上修改数值，不需要写Python代码。
+overrides:
+  controller_server:
+    FollowPath.v_linear_max: 0.35
+    FollowPath.v_linear_min: -0.35
+    FollowPath.translation_kp: 3.0
+    general_goal_checker.xy_goal_tolerance: 0.03
+  velocity_smoother:
+    max_velocity: [0.35, 0.35, 1.0]
+    min_velocity: [-0.35, -0.35, -1.0]

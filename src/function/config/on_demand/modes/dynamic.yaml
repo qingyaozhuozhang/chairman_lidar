@@ -1,0 +1,80 @@
+# 任务运行期间生效；不会写回 nav2_params.yaml。
+id: 2
+name: dynamic
+base_mode: 2
+simple_nav_node:
+  nav2_profile_2_switch_distance: 1.5
+  nav2_profile_2_switch_check_period: 0.05
+  nav2_profile_2_name: 快速_对抗区后半段
+  nav2_profile_2_xy_goal_tolerance: 0.02
+  nav2_profile_2_yaw_goal_tolerance: 0.02
+  nav2_profile_2_use_rotate_to_heading: true
+  nav2_profile_2_rotate_to_goal_heading_only: true
+  nav2_profile_2_yaw_hold_tolerance: 0.01
+  nav2_profile_2_v_linear_min: -1.5
+  nav2_profile_2_v_linear_max: 1.5
+  nav2_profile_2_v_angular_min: -1.5
+  nav2_profile_2_v_angular_max: 1.5
+  nav2_profile_2_translation_kp: 4.0
+  nav2_profile_2_translation_ki: 0.0
+  nav2_profile_2_translation_kd: 0.0
+  nav2_profile_2_enable_rotation: true
+  nav2_profile_2_rotation_kp: 1.5
+  nav2_profile_2_rotation_ki: 0.0
+  nav2_profile_2_rotation_kd: 0.0
+  nav2_profile_2_min_approach_linear_velocity: 0.08
+  nav2_profile_2_min_approach_angular_velocity: 0.05
+  nav2_profile_2_approach_velocity_scaling_dist: 0.3
+  nav2_profile_2_max_velocity:
+  - 1.5
+  - 1.5
+  - 1.5
+  nav2_profile_2_min_velocity:
+  - -1.5
+  - -1.5
+  - -1.5
+  nav2_profile_2_max_accel:
+  - 2.0
+  - 2.0
+  - 1.5
+  nav2_profile_2_max_decel:
+  - -2.0
+  - -2.0
+  - -1.5
+  nav2_profile_2_sprint_name: 快速冲刺_对抗区前半段
+  nav2_profile_2_sprint_xy_goal_tolerance: 0.03
+  nav2_profile_2_sprint_yaw_goal_tolerance: 0.03
+  nav2_profile_2_sprint_use_rotate_to_heading: false
+  nav2_profile_2_sprint_rotate_to_goal_heading_only: false
+  nav2_profile_2_sprint_yaw_hold_tolerance: 0.03
+  nav2_profile_2_sprint_v_linear_min: -3.0
+  nav2_profile_2_sprint_v_linear_max: 3.0
+  nav2_profile_2_sprint_v_angular_min: -2.5
+  nav2_profile_2_sprint_v_angular_max: 2.5
+  nav2_profile_2_sprint_translation_kp: 10.0
+  nav2_profile_2_sprint_translation_ki: 0.0
+  nav2_profile_2_sprint_translation_kd: 0.0
+  nav2_profile_2_sprint_enable_rotation: true
+  nav2_profile_2_sprint_rotation_kp: 3.0
+  nav2_profile_2_sprint_rotation_ki: 0.0
+  nav2_profile_2_sprint_rotation_kd: 0.0
+  nav2_profile_2_sprint_min_approach_linear_velocity: 0.12
+  nav2_profile_2_sprint_min_approach_angular_velocity: 0.1
+  nav2_profile_2_sprint_approach_velocity_scaling_dist: 0.18
+  nav2_profile_2_sprint_max_velocity:
+  - 3.0
+  - 3.0
+  - 2.5
+  nav2_profile_2_sprint_min_velocity:
+  - -3.0
+  - -3.0
+  - -2.5
+  nav2_profile_2_sprint_max_accel:
+  - 6.0
+  - 6.0
+  - 3.5
+  nav2_profile_2_sprint_max_decel:
+  - -7.0
+  - -7.0
+  - -4.0
+overrides: {}

@@ -1,0 +1,5 @@
+poses:
+  1: {lidar_init_x: -5.082, lidar_init_y: -1.500, lidar_init_qz: -0.707, lidar_init_qw: 0.707}
+  2: {lidar_init_x: 5.708, lidar_init_y: -5.257, lidar_init_qz: 0.707, lidar_init_qw: 0.707}
+  3: {lidar_init_x: -5.082, lidar_init_y: 1.500, lidar_init_qz: 0.707, lidar_init_qw: 0.707}
+  4: {lidar_init_x: 5.708, lidar_init_y: 5.257, lidar_init_qz: -0.707, lidar_init_qw: 0.707}

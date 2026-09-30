@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.8)
+project(configuration)
+find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_python REQUIRED)
+ament_python_install_package(${PROJECT_NAME} PACKAGE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+install(PROGRAMS resource/main_boot DESTINATION lib/${PROJECT_NAME})
+ament_package()

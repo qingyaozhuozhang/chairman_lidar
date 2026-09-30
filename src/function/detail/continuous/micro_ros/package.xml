@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>micro_ros</name>
+  <version>0.1.0</version>
+  <description>Continuous micro-ROS Agent with local connection configuration.</description>
+  <maintainer email="chairman@example.com">chairman</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>micro_ros_agent</exec_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

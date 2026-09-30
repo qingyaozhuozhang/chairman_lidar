@@ -1,0 +1,4 @@
+# workspace 相对于 chairman_navigation 根目录；留空使用已 source 的环境。
+workspace: ""  # 例如 ../uros_ws
+device: /dev/ttyUSB0
+baud: 921600

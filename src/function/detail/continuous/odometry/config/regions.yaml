@@ -1,0 +1,197 @@
+# ====== 第一套方案 (启动时输入 1 或 2 时使用: 红方) ======
+regions_red:
+  - id: 0
+    name: "武馆"
+    x_min: -5.65
+    x_max: -3.65
+    y_min: -6.02
+    y_max: -0.02
+  - id: 1
+    name: "梅林入口"
+    x_min: -3.575
+    x_max: -2.375
+    y_min: -4.76
+    y_max: -1.16
+  - id: 2
+    name: "梅林_1"
+    x_min: -2.375
+    x_max: -1.175
+    y_min: -2.36
+    y_max: -1.16
+  - id: 3
+    name: "梅林_2"
+    x_min: -2.375
+    x_max: -1.175
+    y_min: -3.56
+    y_max: -2.36
+  - id: 4
+    name: "梅林_3"
+    x_min: -2.375
+    x_max: -1.175
+    y_min: -4.76
+    y_max: -3.56
+  - id: 5
+    name: "梅林_4"
+    x_min: -1.175
+    x_max: 0.025
+    y_min: -2.36
+    y_max: -1.16
+  - id: 6
+    name: "梅林_5"
+    x_min: -1.175
+    x_max: 0.025
+    y_min: -3.56
+    y_max: -2.36
+  - id: 7
+    name: "梅林_6"
+    x_min: -1.175
+    x_max: 0.025
+    y_min: -4.76
+    y_max: -3.56
+  - id: 8
+    name: "梅林_7"
+    x_min: 0.025
+    x_max: 1.225
+    y_min: -2.36
+    y_max: -1.16
+  - id: 9
+    name: "梅林_8"
+    x_min: 0.025
+    x_max: 1.225
+    y_min: -3.56
+    y_max: -2.36
+  - id: 10
+    name: "梅林_9"
+    x_min: -0.05
+    x_max: 1.15
+    y_min: -4.87
+    y_max: -3.67
+  - id: 11
+    name: "梅林_10"
+    x_min: 1.15
+    x_max: 2.35
+    y_min: -2.47
+    y_max: -1.27
+  - id: 12
+    name: "梅林_11"
+    x_min: 1.15
+    x_max: 2.35
+    y_min: -3.67
+    y_max: -2.47
+  - id: 13
+    name: "梅林_12"
+    x_min: 1.15
+    x_max: 2.35
+    y_min: -4.87
+    y_max: -3.67
+  - id: 14
+    name: "梅林出口"
+    x_min: 2.35
+    x_max: 3.85
+    y_min: -6.02
+    y_max: -1.22
+  - id: 15
+    name: "对抗区"
+    x_min: 3.85
+    x_max: 6.35
+    y_min: -6.02
+    y_max: -0.02
+
+# ====== 第二套方案 (启动时输入 3 或 4 时使用: 蓝方) ======
+regions_blue:
+  - id: 0
+    name: "武馆"
+    x_min: -5.65
+    x_max: -3.65
+    y_min: 0.025
+    y_max: 6.025
+  - id: 1
+    name: "梅林入口"
+    x_min: -3.575
+    x_max: -2.375
+    y_min: 1.335
+    y_max: 4.935
+  - id: 2
+    name: "梅林_1"
+    x_min: -2.375
+    x_max: -1.175
+    y_min: 3.735
+    y_max: 4.935
+  - id: 3
+    name: "梅林_2"
+    x_min: -2.375
+    x_max: -1.175
+    y_min: 2.535
+    y_max: 3.735
+  - id: 4
+    name: "梅林_3"
+    x_min: -2.375
+    x_max: -1.175
+    y_min: 1.335
+    y_max: 2.535
+  - id: 5
+    name: "梅林_4"
+    x_min: -1.175
+    x_max: 0.025
+    y_min: 3.735
+    y_max: 4.935
+  - id: 6
+    name: "梅林_5"
+    x_min: -1.175
+    x_max: 0.025
+    y_min: 2.535
+    y_max: 3.735
+  - id: 7
+    name: "梅林_6"
+    x_min: -1.175
+    x_max: 0.025
+    y_min: 1.335
+    y_max: 2.535
+  - id: 8
+    name: "梅林_7"
+    x_min: 0.025
+    x_max: 1.225
+    y_min: 3.735
+    y_max: 4.935
+  - id: 9
+    name: "梅林_8"
+    x_min: 0.025
+    x_max: 1.225
+    y_min: 2.535
+    y_max: 3.735
+  - id: 10
+    name: "梅林_9"
+    x_min: -0.05
+    x_max: 1.15
+    y_min: 1.225
+    y_max: 2.425
+  - id: 11
+    name: "梅林_10"
+    x_min: 1.15
+    x_max: 2.35
+    y_min: 3.625
+    y_max: 4.825
+  - id: 12
+    name: "梅林_11"
+    x_min: 1.15
+    x_max: 2.35
+    y_min: 2.425
+    y_max: 3.625
+  - id: 13
+    name: "梅林_12"
+    x_min: 1.15
+    x_max: 2.35
+    y_min: 1.225
+    y_max: 2.425
+  - id: 14
+    name: "梅林出口"
+    x_min: 2.35
+    x_max: 3.85
+    y_min: 1.225
+    y_max: 6.025
+  - id: 15
+    name: "对抗区"
+    x_min: 3.85
+    x_max: 6.35
+    y_min: 0.025
+    y_max: 6.025

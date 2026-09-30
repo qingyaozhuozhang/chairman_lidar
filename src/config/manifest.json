@@ -1,0 +1,17 @@
+{
+  "fast_lio/velodyne.yaml": "src/fishbot/fast_lio/config/velodyne.yaml",
+  "fast_lio/ouster64.yaml": "src/fishbot/fast_lio/config/ouster64.yaml",
+  "fast_lio/avia.yaml": "src/fishbot/fast_lio/config/avia.yaml",
+  "fast_lio/mid360.yaml": "src/fishbot/fast_lio/config/mid360.yaml",
+  "fast_lio/horizon.yaml": "src/fishbot/fast_lio/config/horizon.yaml",
+  "fishbot_navigation2/nav2_params.yaml": "src/fishbot/fishbot_navigation2/config/nav2_params.yaml",
+  "fishbot_navigation2/rviz/nav2_default_view.rviz": "src/fishbot/fishbot_navigation2/config/rviz/nav2_default_view.rviz",
+  "fishbot_navigation2/rviz/display_model.rviz": "src/fishbot/fishbot_navigation2/config/rviz/display_model.rviz",
+  "livox_ros_driver2/display_point_cloud_ROS1.rviz": "src/fishbot/livox_ros_driver2/config/display_point_cloud_ROS1.rviz",
+  "livox_ros_driver2/mixed_HAP_MID360_config.json": "src/fishbot/livox_ros_driver2/config/mixed_HAP_MID360_config.json",
+  "livox_ros_driver2/MID360_config.json": "src/fishbot/livox_ros_driver2/config/MID360_config.json",
+  "livox_ros_driver2/display_point_cloud_ROS2.rviz": "src/fishbot/livox_ros_driver2/config/display_point_cloud_ROS2.rviz",
+  "livox_ros_driver2/HAP_config.json": "src/fishbot/livox_ros_driver2/config/HAP_config.json",
+  "odometry/regions.yaml": "src/function/detail/continuous/odometry/config/regions.yaml",
+  "odometry/initial_poses.yaml": "src/function/detail/continuous/odometry/config/initial_poses.yaml"
+}

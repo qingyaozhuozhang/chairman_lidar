@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>configuration</name><version>0.1.0</version>
+  <description>Chairman navigation framework: configuration</description>
+  <maintainer email="chairman@example.com">chairman</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>micro_ros</exec_depend>
+  <exec_depend>framework</exec_depend>
+  <exec_depend>fishbot_navigation2</exec_depend>
+  <exec_depend>odometry</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

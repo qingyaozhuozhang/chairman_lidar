@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<robot name="mid360_robot" xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <xacro:include filename="$(find fishbot_navigation2)/urdf/my_robot/sensor/mid360.xacro"/>  
+  <xacro:include filename="$(find fishbot_navigation2)/urdf/my_robot/commons/common_macros.xacro"/>
+  
+  <link name="base_footprint"/>
+    
+    <xacro:box_xacro 
+    name="base_link" 
+    length="0.7" 
+    width="0.7" 
+    height="0.08" 
+    color="${white_tou}" 
+    is_child="true"
+    parent_link="base_footprint"
+    xyz="0 0 0.04"
+    />
+
+    <xacro:cylinder_xacro 
+    name="bhind_left_wheel" 
+    length="0.032" 
+    radius="0.04" 
+    color="${black}" 
+    self_rpy="1.57079 0 0"
+    type="continuous"
+    is_child="true"
+    parent_link="base_link"
+    xyz="-0.25 0.36 -0.04"
+    axis_xyz="0 1 0"/>
+
+    <xacro:cylinder_xacro 
+    name="bhind_right_wheel" 
+    length="0.032" 
+    radius="0.04" 
+    color="${black}" 
+    self_rpy="1.57079 0 0"
+    type="continuous"
+    is_child="true"
+    parent_link="base_link"
+    xyz="-0.25 -0.36 -0.04"
+    axis_xyz="0 1 0"/>
+
+    <xacro:cylinder_xacro 
+    name="ahead_left_wheel" 
+    length="0.032" 
+    radius="0.04" 
+    color="${black}" 
+    self_rpy="1.57079 0 0"
+    type="continuous"
+    is_child="true"
+    parent_link="base_link"
+    xyz="0.25 0.36 -0.04"
+    axis_xyz="0 1 0"/>
+
+    <xacro:cylinder_xacro 
+    name="ahead_right_wheel" 
+    length="0.032" 
+    radius="0.04" 
+    color="${black}" 
+    self_rpy="1.57079 0 0"
+    type="continuous"
+    is_child="true"
+    parent_link="base_link"
+    xyz="0.25 -0.36 -0.04"
+    axis_xyz="0 1 0"/>
+
+  <xacro:mid360  name="livox_frame" parent="base_link" topic="/livox/lidar">
+    <origin xyz="0.35 0.0 0.06" rpy="0.0 0 0.0"/>
+  </xacro:mid360> 
+
+  <xacro:box_xacro
+        name="imu_link" 
+        length="0.02" 
+        width="0.02" 
+        height="0.02" 
+        color="${yellow}" 
+        is_child="true"
+        parent_link="base_link"
+        xyz="0 0 0.02" />
+
+  <xacro:box_xacro 
+        name="camera_link" 
+        length="0.02" 
+        width="0.10" 
+        height="0.02" 
+        color="${black}" 
+        is_child="true"
+        parent_link="base_link"
+        xyz="0.35 0.0 0.05"/>
+</robot>
