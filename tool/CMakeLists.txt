@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.8)
 project(tool)
 find_package(ament_cmake REQUIRED)
-foreach(tool downsample_map get_init_pose get_pose)
+foreach(tool downsample_map get_init_pose get_pose point)
   install(PROGRAMS ${tool}.py DESTINATION lib/${PROJECT_NAME} RENAME ${tool})
 endforeach()
 ament_package()
