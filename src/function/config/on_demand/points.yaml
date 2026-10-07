@@ -264,6 +264,14 @@ red:
     - 0.0
     - 1.0
     mode: 2
+  33:
+    name: test
+    pose:
+    - 1.0
+    - 1.0
+    - 1.0
+    - 1.0
+    mode: 3
 blue:
   0:
     name: 原点

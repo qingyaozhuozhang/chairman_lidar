@@ -174,7 +174,7 @@ def climb(node, target_distance=None):
         node.publish_twist_speed(twist_msg)
 
         if now - last_debug_time > 0.3:
-            node.get_logger().info(
+            node.task_progress.update(
                 f'vx:{vx_global:+.3f} m/s，'
                 f'x:{x_traveled:+.4f}m，'
                 f'y偏移:{cross_error:+.4f} m，'

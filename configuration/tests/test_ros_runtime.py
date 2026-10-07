@@ -56,6 +56,8 @@ def scene():
         if handle.is_cancel_requested:
             state['cancelled'] += 1
             handle.canceled()
+        elif state.get('abort'):
+            handle.abort()
         else:
             handle.succeed()
         return NavigateToPose.Result()
@@ -90,11 +92,24 @@ def scene():
 
 
 @pytest.mark.parametrize('mode', [1, 2, 3])
-def test_modes_restore_real_ros_parameters(scene, mode):
+def test_modes_restore_real_ros_parameters(scene, mode, monkeypatch):
     from custom_msg.srv import SetNavTarget
-    _, _, _, client, _, check = scene
+    node, _, _, client, _, check = scene
+    finish = node.task_progress.finish
+    reported = []
+
+    def verified_finish(*args):
+        check()  # Final output must follow action completion and parameter restoration.
+        reported.append(True)
+        return finish(*args)
+
+    monkeypatch.setattr(node.task_progress, 'finish', verified_finish)
     result = wait(client.call_async(SetNavTarget.Request(target=mode)))
     assert result.success, result.message
+    assert reported == [True]
+    assert result.message.startswith('[任务完成]')
+    expected = {1: '模式1 基础导航', 2: '模式2 精调', 3: '模式3 2/2'}[mode]
+    assert f'结束位置：{expected}' in result.message
     check()
 
 
@@ -111,12 +126,14 @@ def test_partial_remote_rejection_restores_controller(scene):
     check()
 
 
-def test_emergency_cancel_settles_action_and_restores(scene):
+@pytest.mark.parametrize('mode', [1, 2, 3])
+def test_emergency_cancel_settles_action_and_restores(scene, mode):
     from custom_msg.srv import SetNavTarget
     from std_msgs.msg import Empty
     node, _, _, client, state, check = scene
+    node.get_current_map_pose = lambda **kwargs: (-2.0, 0.0, 0.0)
     state['hold'] = True
-    future = client.call_async(SetNavTarget.Request(target=1))
+    future = client.call_async(SetNavTarget.Request(target=mode))
     deadline = time.monotonic() + 6
     while not state['started']:
         assert time.monotonic() < deadline
@@ -124,11 +141,46 @@ def test_emergency_cancel_settles_action_and_restores(scene):
     node.stop_callback(Empty())
     result = wait(future)
     assert not result.success
+    assert result.message.startswith('[任务中止]')
     assert state['cancelled'] == 1
     check()
 
 
-def test_switch_failure_during_running_goal_cancels_goal(scene):
+@pytest.mark.parametrize('mode', [1, 2, 3])
+def test_nav2_abort_reports_failure_and_exact_stage(scene, mode):
+    from custom_msg.srv import SetNavTarget
+    node, _, _, client, state, check = scene
+    # Keep outside mode 3's release region so its first stage must return ABORTED.
+    node.get_current_map_pose = lambda **kwargs: (-2.0, 0.0, 0.0)
+    state['abort'] = True
+    result = wait(client.call_async(SetNavTarget.Request(target=mode)))
+    assert not result.success
+    assert result.message.startswith('[任务失败]')
+    assert 'ABORTED' in result.message and '状态码 6' in result.message
+    expected = {1: '模式1 基础导航', 2: '模式2 冲刺', 3: '模式3 1/2'}[mode]
+    assert f'结束位置：{expected}' in result.message
+    check()
+
+
+def test_failed_restore_is_not_reported_as_completed(scene, monkeypatch):
+    from custom_msg.srv import SetNavTarget
+    node, _, _, client, _, check = scene
+
+    def fail_restore():
+        raise TimeoutError('模拟参数恢复超时')
+
+    with monkeypatch.context() as patch:
+        patch.setattr(node, 'restore_temporary_parameters', fail_restore)
+        result = wait(client.call_async(SetNavTarget.Request(target=1)))
+        assert not result.success
+        assert result.message.startswith('[任务失败]')
+        assert '停止/参数恢复尚未确认' in result.message
+        assert '临时参数已恢复' not in result.message
+    node.restore_temporary_parameters()
+    check()
+
+
+def test_switch_failure_during_running_goal_cancels_goal(scene, capfd):
     from custom_msg.srv import SetNavTarget
     from rcl_interfaces.msg import SetParametersResult
     node, controller, _, client, state, check = scene
@@ -140,6 +192,30 @@ def test_switch_failure_during_running_goal_cancels_goal(scene):
     result = wait(client.call_async(SetNavTarget.Request(target=2)))
     assert not result.success
     assert state['cancelled'] == 1
+    assert '结束位置：模式2 冲刺' in result.message
+    assert '[阶段开始] 模式2 精调' not in capfd.readouterr().err
+    check()
+
+
+def test_mode2_switch_reports_fine_stage_only_after_parameters_apply(scene, capfd):
+    from custom_msg.srv import SetNavTarget
+    node, _, _, client, state, check = scene
+    state['hold'] = True
+    node.get_nav2_distance_to_goal = lambda *args, **kwargs: 0.0 if state['started'] else 10.0
+    future = client.call_async(SetNavTarget.Request(target=2))
+    deadline = time.monotonic() + 6
+    while '模式2 精调' not in node.task_progress.stage_name:
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
+    assert node.current_nav2_speed_profile == 2
+    state['hold'] = False
+    result = wait(future)
+    assert result.success, result.message
+    assert '结束位置：模式2 精调' in result.message
+    output = capfd.readouterr().err
+    assert output.index('[阶段开始] 模式2 冲刺') < output.index('[阶段结束] 模式2 冲刺')
+    assert output.index('[阶段结束] 模式2 冲刺') < output.index('[阶段开始] 模式2 精调')
+    assert output.count('[任务完成]') == 1
     check()
 
 
@@ -230,8 +306,13 @@ def test_sum_without_arguments_cancels_then_returns_to_menu(field):
         process.stdin.flush()
         until('抬升自检测启动')
         os.killpg(process.pid, signal.SIGINT)
-        until('未完成：')
+        until('[任务中止]')
         until('菜单中 q 或 Ctrl+C 退出')
+        text = ''.join(transcript)
+        assert text.count('chairman_navigation 功能菜单') == 2
+        assert text.count('[任务开始]') == 1
+        assert text.count('[任务中止]') == 1
+        assert '\x1b[2K' not in text, '管道日志不能写入终端刷新字符'
         process.stdin.write('q\n')
         process.stdin.flush()
         assert process.wait(timeout=8) == 0

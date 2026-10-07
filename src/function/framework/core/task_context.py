@@ -50,9 +50,10 @@ class TaskContext:
         from chairman_tasks.special.kfs_navigation.task import navigate
         return self.navigation(mode, lambda base: navigate(self.node, offset, speed_profile=base))
 
-    def manual(self, callback):
+    def manual(self, callback, name='手写运动'):
         if self.cancelled:
             return False
+        self.node.task_progress.stage(name, '正在执行手写控制')
         self.node.manual_control_active = True
         self.node.manual_control_reason = '按需任务手写运动'
         self.node.reset_filter_state()
@@ -63,31 +64,36 @@ class TaskContext:
             self.node.manual_control_active = False
             self.node.manual_control_reason = ''
             self.node.publish_manual_zero_speed('手写运动片段结束')
+            self.node.task_progress.end_stage('手写控制已结束，已发送零速度')
 
     def rotate(self, angle_degrees):
         from chairman_tasks.special.turn_left.task import rotate
-        return self.manual(lambda: rotate(self.node, float(angle_degrees)))
+        return self.manual(lambda: rotate(self.node, float(angle_degrees)), f'旋转 {angle_degrees}°')
 
     def move(self, local_x, local_y, distance):
         from chairman_tasks.special.move_forward.task import move
-        return self.manual(lambda: move(self.node, local_x, local_y, distance))
+        return self.manual(lambda: move(self.node, local_x, local_y, distance), f'闭环移动 {distance}m')
 
     def move_offset(self, offset):
         from chairman_tasks.special.kfs_move.task import move_offset
-        return self.manual(lambda: move_offset(self.node, offset))
+        return self.manual(lambda: move_offset(self.node, offset), 'KFS 偏置移动')
 
     def uphill(self):
         from chairman_tasks.special.uphill.task import climb
-        return self.manual(lambda: climb(self.node))
+        return self.manual(lambda: climb(self.node), '上坡')
 
     def stair(self, local_x, local_y, speed, name='登阶'):
         from chairman_tasks.special.stair_forward.task import start_corrected_stair_mode, wait_stair_stop_signal
         return self.manual(lambda: start_corrected_stair_mode(self.node, local_x, local_y, speed, name)
-                           and wait_stair_stop_signal(self.node, name))
+                           and wait_stair_stop_signal(self.node, name), name)
 
     def wait_lift(self):
         from chairman_tasks.special.lift_wait.task import wait_lift
-        return bool(wait_lift(self.node)) and not self.cancelled
+        self.node.task_progress.stage('抬升检测', '等待高度变化达到阈值')
+        try:
+            return bool(wait_lift(self.node)) and not self.cancelled
+        finally:
+            self.node.task_progress.end_stage('抬升检测结束')
 
     def wait(self, seconds):
         deadline = time.monotonic() + float(seconds)

@@ -20,20 +20,12 @@ class DynamicProfileMixin:
 
         distance = self.get_nav2_distance_to_goal(target_x, target_y, timeout_sec=0.05)
         if distance is not None and distance <= self.nav2_profile_2_switch_distance:
-            self.get_logger().info(
-                f"📍 模式2起点距离目标 {distance:.3f} m <= {self.nav2_profile_2_switch_distance:.2f} m，"
-                f"直接使用快速精调档"
-            )
             return 2
 
         if distance is None:
             self.get_logger().warn(
-                "⚠️ 模式2启动时暂时无法获取 map 坐标距离，先使用快速冲刺档，行驶中继续检测 50cm 切换"
-            )
-        else:
-            self.get_logger().info(
-                f"📍 模式2起点距离目标 {distance:.3f} m > {self.nav2_profile_2_switch_distance:.2f} m，"
-                f"先使用快速冲刺档"
+                f'[模式2] 暂时无法获取 map 位姿，先使用冲刺档；'
+                f'位姿恢复后按 {self.nav2_profile_2_switch_distance:.2f}m 阈值切换精调'
             )
 
         return self.nav2_profile_2_sprint_key
@@ -60,8 +52,8 @@ class DynamicProfileMixin:
             return
 
         if distance <= self.nav2_profile_2_switch_distance:
-            self.get_logger().info(
-                f"📍 距离目标点 {distance:.3f} m <= {self.nav2_profile_2_switch_distance:.2f} m，"
-                f"模式2从【快速冲刺】切换为【快速精调】：{desc}"
-            )
+            self.task_progress.update('已进入精调距离，正在切换速度参数')
             self.apply_nav2_speed_profile(2)
+            self.task_progress.end_stage(
+                f'距目标 {distance:.3f}m <= {self.nav2_profile_2_switch_distance:.3f}m，精调参数已生效')
+            self.task_progress.stage(f'模式2 精调【{desc}】', '继续当前 Nav2 目标，进行到点精调')

@@ -12,7 +12,9 @@ class PreAlignMixin:
           - 到提前点附近后，yaw 差不多就放行；
           - 如果已经到提前点附近但 yaw 还没完全调好，最多再等
             nav2_profile_3_pre_align_near_adjust_timeout 秒，然后直接进入真实目标点。
+          - 放行后先停止速度转发，并确认第一段 Action 返回终态，才允许发送第二段。
         """
+        self.task_progress.stage(f'模式3 1/2 提前转正【{desc}】', '准备参数，等待 Nav2 接受目标')
         actual_speed_profile = self.select_initial_nav2_profile(3, x, y, desc)
         self.apply_nav2_speed_profile(actual_speed_profile)
         self.nav2_dynamic_last_check_time = None
@@ -35,17 +37,10 @@ class PreAlignMixin:
         release_yaw = max(0.0, float(self.nav2_profile_3_pre_align_release_yaw_tolerance))
         near_adjust_timeout = max(0.0, float(self.nav2_profile_3_pre_align_near_adjust_timeout))
 
-        self.get_logger().info(
-            f'🚀 模式3第一段快速调整开始【{desc}】：'
-            f'提前点xy放行={release_xy:.3f}m，'
-            f'yaw放行={math.degrees(release_yaw):.1f}°，'
-            f'近点最多调整={near_adjust_timeout:.2f}s'
-        )
-
         self.current_nav_goal_handle = None
         tracker_started = False
         near_start_time = None
-        last_debug_time = 0.0
+        stage_result = '第一段未完成'
 
         try:
             self.start_nav_cmd_tracking(desc)
@@ -55,7 +50,7 @@ class PreAlignMixin:
 
             while not future.done():
                 if self.cancel_current_task:
-                    self.get_logger().warn(f'⚠️ 模式3第一段【{desc}】发送阶段收到取消标志')
+                    stage_result = '发送阶段收到中止请求'
                     return False
                 time.sleep(0.01)
 
@@ -63,24 +58,21 @@ class PreAlignMixin:
             self.current_nav_goal_handle = goal_handle
 
             if goal_handle is None:
-                self.get_logger().error('❌ 模式3第一段 Nav2 goal_handle 为空')
+                stage_result = 'Nav2 未返回第一段目标句柄'
+                self.task_progress.fail(stage_result)
                 return False
 
             if not goal_handle.accepted:
-                self.get_logger().error(f'❌ 模式3第一段导航请求被拒绝：{desc}')
+                stage_result = 'Nav2 拒绝了第一段导航目标'
+                self.task_progress.fail(stage_result)
                 return False
 
-            self.get_logger().info(f'✅ 模式3第一段 Nav2 已接受目标【{desc}】')
+            self.task_progress.update('Nav2 已接受第一段目标')
             result_future = goal_handle.get_result_async()
 
             while not result_future.done():
                 if self.cancel_current_task:
-                    self.get_logger().warn('⚠️ 收到取消标志，正在取消模式3第一段 Nav2 目标！')
-                    try:
-                        cancel_future = goal_handle.cancel_goal_async()
-                        self.wait_future_done(cancel_future, timeout_sec=0.5)
-                    except Exception as e:
-                        self.get_logger().error(f'❌ 取消模式3第一段 Nav2 goal 失败: {e}')
+                    stage_result = '第一段收到中止请求'
                     return False
 
                 pose = self.get_current_map_pose(timeout_sec=0.01, log_error=False)
@@ -89,57 +81,31 @@ class PreAlignMixin:
                     dist_error = math.hypot(target_x - current_x, target_y - current_y)
                     yaw_error = abs(self.normalize_angle(target_yaw - current_yaw))
 
-                    now_s = time.time()
+                    now_s = time.monotonic()
+                    self.task_progress.update(
+                        f'距提前点 {dist_error:.3f}m | 朝向误差 {math.degrees(yaw_error):.1f}°')
 
                     if dist_error <= release_xy:
                         if near_start_time is None:
                             near_start_time = now_s
-                            self.get_logger().info(
-                                f'📍 模式3第一段已到提前点附近：'
-                                f'xy误差={dist_error:.3f}m <= {release_xy:.3f}m，开始快速放行判断'
-                            )
 
                         near_elapsed = now_s - near_start_time
 
                         if yaw_error <= release_yaw:
-                            self.get_logger().info(
-                                f'✅ 模式3第一段提前放行：'
-                                f'xy误差={dist_error:.3f}m，'
-                                f'yaw误差={math.degrees(yaw_error):.2f}° <= {math.degrees(release_yaw):.2f}°，'
-                                f'直接进入真实目标点'
-                            )
-                            try:
-                                cancel_future = goal_handle.cancel_goal_async()
-                                self.wait_future_done(cancel_future, timeout_sec=0.5)
-                            except Exception as e:
-                                self.get_logger().warn(f'⚠️ 模式3第一段放行时取消 Nav2 goal 异常: {e}')
+                            stage_result = (f'达到放行条件：距离 {dist_error:.3f}m，'
+                                            f'朝向误差 {math.degrees(yaw_error):.1f}°；第一段动作已结束')
                             return True
 
                         if near_adjust_timeout <= 1e-6 or near_elapsed >= near_adjust_timeout:
-                            self.get_logger().warn(
-                                f'⏩ 模式3第一段近点调整到时放行：'
-                                f'已在提前点附近调整 {near_elapsed:.2f}s，'
-                                f'xy误差={dist_error:.3f}m，'
-                                f'yaw误差={math.degrees(yaw_error):.2f}°，'
-                                f'直接进入真实目标点'
-                            )
-                            try:
-                                cancel_future = goal_handle.cancel_goal_async()
-                                self.wait_future_done(cancel_future, timeout_sec=0.5)
-                            except Exception as e:
-                                self.get_logger().warn(f'⚠️ 模式3第一段超时放行时取消 Nav2 goal 异常: {e}')
+                            stage_result = (f'近点调整达到 {near_adjust_timeout:.2f}s 上限，按配置放行；'
+                                            f'朝向误差仍为 {math.degrees(yaw_error):.1f}°；第一段动作已结束')
                             return True
 
                     else:
                         near_start_time = None
 
-                    if now_s - last_debug_time > 0.30:
-                        self.get_logger().info(
-                            f'🧭 模式3第一段调整中：'
-                            f'xy误差={dist_error:.3f}m，'
-                            f'yaw误差={math.degrees(yaw_error):.2f}°'
-                        )
-                        last_debug_time = now_s
+                else:
+                    self.task_progress.update('第一段导航中；暂时无法读取 map 位姿')
 
                 time.sleep(0.01)
 
@@ -147,16 +113,30 @@ class PreAlignMixin:
             status = result.status if result is not None else None
 
             if status == GoalStatus.STATUS_SUCCEEDED:
-                self.get_logger().info(f'🎯 模式3第一段 Nav2 已自然成功：{desc}')
+                stage_result = 'Nav2 确认已到达第一段目标'
                 return True
 
-            self.get_logger().warn(f'⚠️ 模式3第一段任务异常结束，状态码: {status}')
+            stage_result = self.nav2_result_description(status)
+            self.task_progress.fail(stage_result)
             return False
 
         finally:
-            if tracker_started or self.nav_cmd_tracking_enabled:
-                self.stop_nav_cmd_tracking(f'🛑 模式3第一段结束/放行：{desc}，显式停止底盘')
-            self.current_nav_goal_handle = None
+            try:
+                if tracker_started or self.nav_cmd_tracking_enabled:
+                    self.stop_nav_cmd_tracking(f'🛑 模式3第一段结束/放行：{desc}，显式停止底盘')
+                # 取消请求的响应仅表示已受理，不表示旧行为树已经停止。
+                # Nav2 在取消收尾时会 terminate_all()，过早发送的第二段也可能被 ABORT。
+                # settle() 等待旧目标 result（包括迟到的接受响应）；超时抛错并保留
+                # pending，交给框架恢复流程处理，禁止继续发送第二段。
+                if self._nav_client.pending:
+                    self.task_progress.update('阶段交接：等待第一段 Nav2 动作结束确认')
+                self._nav_client.settle()
+            except Exception:
+                stage_result = '第一段动作结束未能确认，停止后续导航'
+                raise
+            finally:
+                self.current_nav_goal_handle = None
+                self.task_progress.end_stage(stage_result)
 
     def execute_profile3_pre_yaw_align_goal(self, x, y, qz, qw, desc, timeout_sec=None):
         """模式 3 专用提前转正两段式导航。
@@ -190,14 +170,6 @@ class PreAlignMixin:
         distance = math.hypot(dx, dy)
 
         align_distance = max(0.0, float(self.nav2_profile_3_pre_align_distance))
-        target_yaw = self.yaw_from_qz_qw(qz, qw)
-        yaw_error = abs(self.normalize_angle(target_yaw - current_yaw))
-
-        self.get_logger().info(
-            f"🧭 模式3提前转正两段式导航：{desc}，"
-            f"距离={distance:.3f}m，阈值={align_distance:.3f}m，"
-            f"目标yaw差={math.degrees(yaw_error):.2f}°"
-        )
 
         if align_distance <= 1e-6:
             self.get_logger().warn(
@@ -208,19 +180,14 @@ class PreAlignMixin:
                 x, y, qz, qw, desc, timeout_sec=timeout_sec, speed_profile=3
             )
 
-        # 距离目标点已经在 0.8m 阈值以内：不再生成提前点，直接原地先转正。
+        # 距离在配置阈值以内：不再生成提前点，直接原地先转正。
         if distance <= align_distance:
-            self.get_logger().info(
-                f"📍 当前距离目标 {distance:.3f}m <= {align_distance:.3f}m，"
-                f"模式3先在当前位置原地转正，再进入目标点"
-            )
-
             turn_ok = self.execute_nav2_goal_until_profile3_first_stage_ready(
                 current_x,
                 current_y,
                 qz,
                 qw,
-                f"{desc}-模式3原地提前转正"
+                f"{desc}（原地）"
             )
 
             if not turn_ok:
@@ -229,9 +196,6 @@ class PreAlignMixin:
             if self.cancel_current_task:
                 return False
 
-            self.get_logger().info(
-                f"➡️ 模式3转正完成，保持目标姿态平移进入真实目标点：{desc}"
-            )
             return self.execute_nav2_goal(
                 x,
                 y,
@@ -239,27 +203,22 @@ class PreAlignMixin:
                 qw,
                 f"{desc}-模式3转正后进点",
                 timeout_sec=timeout_sec,
-                speed_profile=3
+                speed_profile=3,
+                stage_name=f'模式3 2/2 进入真实目标【{desc}】'
             )
 
-        # 距离目标点在 0.8m 阈值以外：先到真实目标点前方 0.8m 的提前点，并使用最终目标姿态。
+        # 距离在配置阈值以外：先到提前点，并使用最终目标姿态。
         unit_x = dx / distance
         unit_y = dy / distance
         pre_x = target_x - unit_x * align_distance
         pre_y = target_y - unit_y * align_distance
-
-        self.get_logger().info(
-            f"📍 当前距离目标 {distance:.3f}m > {align_distance:.3f}m，"
-            f"模式3先到提前转正点 ({pre_x:.3f}, {pre_y:.3f})，"
-            f"该点距离真实目标约 {align_distance:.3f}m，使用最终目标姿态"
-        )
 
         first_ok = self.execute_nav2_goal_until_profile3_first_stage_ready(
             pre_x,
             pre_y,
             qz,
             qw,
-            f"{desc}-模式3提前转正点"
+            f"{desc}（提前点）"
         )
 
         if not first_ok:
@@ -268,9 +227,6 @@ class PreAlignMixin:
         if self.cancel_current_task:
             return False
 
-        self.get_logger().info(
-            f"➡️ 模式3提前转正完成，保持目标姿态平移进入真实目标点：{desc}"
-        )
         return self.execute_nav2_goal(
             x,
             y,
@@ -278,5 +234,6 @@ class PreAlignMixin:
             qw,
             f"{desc}-模式3转正后进点",
             timeout_sec=timeout_sec,
-            speed_profile=3
+            speed_profile=3,
+            stage_name=f'模式3 2/2 进入真实目标【{desc}】'
         )

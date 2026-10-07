@@ -171,7 +171,7 @@ def move(node, linear_x, linear_y, target_distance):
         node.publish_twist_speed(twist_msg)
 
         if (now - last_debug_time).nanoseconds / 1e9 > 0.3:
-            node.get_logger().info(
+            node.task_progress.update(
                 f'📏 移动闭环: forward_error={forward_error:+.4f} m, '
                 f'cross_error={cross_error:+.4f} m, '
                 f'cross_v={cross_speed:+.3f} m/s, '

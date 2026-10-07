@@ -3,7 +3,7 @@ from .imports import *
 
 class TrackingMixin:
     def stop_callback(self, msg):
-        self.get_logger().warn("🛑 收到紧急行为树中断指令！正在中止当前任务并刹车")
+        self.get_logger().warn('[中止请求] 已收到停止指令，正在停车；等待动作结束并恢复参数')
 
         self.cancel_current_task = True
         self.in_stair_mode = False
@@ -52,7 +52,7 @@ class TrackingMixin:
         self.data_pub.publish(stop_msg)
 
         if reason:
-            self.get_logger().info(reason)
+            self.get_logger().debug(reason)
 
     def publish_twist_speed(self, twist_msg: Twist, reason: str = ""):
         """把 Twist 速度直接转换成底盘 SpeedHeading 输出，不再回写 /cmd_vel。"""
@@ -63,7 +63,7 @@ class TrackingMixin:
         self.data_pub.publish(speed_msg)
 
         if reason:
-            self.get_logger().info(reason)
+            self.get_logger().debug(reason)
 
     def publish_manual_zero_speed(self, reason: str = ""):
         """手写闭环/登阶结束时直接清底盘速度。"""
@@ -78,9 +78,9 @@ class TrackingMixin:
         self.reset_filter_state()
         self.nav_cmd_tracking_enabled = True
         if desc:
-            self.get_logger().info(f"✅ Nav2速度转发已开启：{desc}")
+            self.get_logger().debug(f"✅ Nav2速度转发已开启：{desc}")
         else:
-            self.get_logger().info("✅ Nav2速度转发已开启")
+            self.get_logger().debug("✅ Nav2速度转发已开启")
 
     def stop_nav_cmd_tracking(self, reason: str = ""):
         """
@@ -95,7 +95,7 @@ class TrackingMixin:
         self.reset_filter_state()
         self.publish_zero_speed(reason if reason else "🛑 Nav2速度转发已显式结束，底盘速度清零")
         if was_enabled:
-            self.get_logger().info("🛑 Nav2速度转发已关闭，后续旧 /cmd_vel 将被忽略")
+            self.get_logger().debug("🛑 Nav2速度转发已关闭，后续旧 /cmd_vel 将被忽略")
 
     def cmd_callback(self, msg):
         """

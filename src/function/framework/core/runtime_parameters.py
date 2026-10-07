@@ -106,7 +106,7 @@ class RuntimeParametersMixin:
         # Rejection aborts the task; the dispatcher restores all touched nodes.
         self.parameter_transaction.apply(self.profile_values(key))
         self.current_nav2_speed_profile = key
-        self.get_logger().info(f'临时应用速度模式 {self.active_mode}，内部阶段 {key}')
+        self.get_logger().debug(f'临时应用速度模式 {self.active_mode}，内部阶段 {key}')
         return True
 
     def restore_temporary_parameters(self):

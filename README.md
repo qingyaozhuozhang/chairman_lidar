@@ -266,6 +266,8 @@ ros2 run framework sum
 
 界面显示“定点导航”和“特殊功能”两组编号及说明。输入编号执行，结束后打印结果并回到菜单；-9 和 16 再提示输入偏置 `x y z`，单位米。执行时 Ctrl+C 中止本次任务，等待停止和参数恢复后返回菜单；菜单中 `q` 或 Ctrl+C 退出。某些任务需要外部结束条件：登阶等待 `/nav_topic=0`，抬升检测等待高度达到阈值。
 
+三种模式的日志统一区分任务开始、阶段开始/结束以及最终完成/中止/失败。模式 1 显示基础导航，模式 2 显示冲刺/精调，模式 3 显示 `1/2 提前转正`、`2/2 进入真实目标`；运行误差在单行状态条中刷新。整次任务结束后自动重新打印完整菜单，空闲时也可输入 `m` 重看；重定向时状态条不写入日志。
+
 高级调试可使用 ROS2 标准参数，例如 `ros2 run framework sum --ros-args -p max_vel_linear:=0.3`。这属于本次进程参数，不是场地或功能选择参数。不要同时启动两个 `sum`，也不要与仅服务入口 `ros2 run framework preset_nav_node` 同时运行。
 
 完整菜单示例、任务接口及添加功能步骤见 [功能开发说明](docs/function_development.md)。
@@ -309,6 +311,25 @@ ros2 run tool get_pose
 ```
 
 无自定义参数。订阅 `/goal_pose`；在 RViz 用 **2D Nav Goal** 点选后输出 `GOAL_X/GOAL_Y/GOAL_Z/GOAL_W`。把 `[x,y,qz,qw]` 写入 `src/function/config/on_demand/points.yaml`。此工具只监听，但 RViz 发布的导航目标可能同时被正在运行的导航节点接收。
+
+### 实车快速标定点位
+
+```bash
+ros2 run tool point
+```
+
+先启动导航和 `odometry`，等待 map 位姿就绪。在菜单中选择区域/固定点、红蓝半场和编号，将机器人停稳后按回车，即采集并保存当前点位。可连续选择下一点，无需重启工具。
+
+工具直接订阅 `/odom_map`（`custom_msg/msg/PoseEuler`），不读取 `/rosout` 日志，也不把 FAST-LIO 原始 `/Odometry` 坐标直接写成地图点位。每次取确认后收到的 **10 条有效消息**，x/y/z 分别去掉一个最大值和一个最小值，用剩余 8 个求平均；yaw 先处理 ±π 环绕再去极值。只把平均 x/y 写入配置，采集速度取决于实际话题频率（例如 10 Hz 约 1 秒），不会等待日志节流周期。默认 5 秒超时，消息不足时不写入。
+
+| 模式 | 写入位置 | 修改内容与生效方式 |
+|---|---|---|
+| 固定点 | `src/function/config/on_demand/points.yaml` | 只修改选中点的 x/y，保留 qz/qw、名称与模式；动态目标 15/16 不可标定。完成后构建 `framework` 并重启功能进程 |
+| 区域中心 | `src/config/odometry/regions.yaml` | 选中区域改为中心±0.6 m；完成后执行 `ros2 run chairman_config sync --files odometry/regions.yaml`，重启 odometry 与功能进程 |
+
+每次修改自动备份到配置所在目录的 `.point_backups/`，保留 YAML 其他字段和注释。默认只编辑本工程的源码配置，不直接修改运行中的参数或安装副本。工具根据自身路径定位工程，也可用 `--workspace /项目根目录` 指定；`--timeout 10` 调整超时，`--topic /odom_map` 指定同类型的 map 位姿话题。`POINT_WORKSPACE` 环境变量也可指定工程。
+
+首次增加该工具后执行 `colcon build --packages-select tool`、`source install/setup.bash`。也可在已加载 ROS 环境的终端直接运行 `python3 tool/point.py`。
 
 ### 地图降采样
 

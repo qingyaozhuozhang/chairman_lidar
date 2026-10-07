@@ -22,6 +22,7 @@ from chairman_tasks.fixed_point.modes.dynamic import DynamicProfileMixin
 from chairman_tasks.fixed_point.modes.pre_align import PreAlignMixin
 from .registry import dispatch, validate_task_modules
 from .actions import TrackedActionClient
+from .progress import TaskProgress, ProgressLogger
 
 
 class FunctionRuntime(NodeSetupMixin, DefaultsMixin, RuntimeParametersMixin,
@@ -29,12 +30,17 @@ class FunctionRuntime(NodeSetupMixin, DefaultsMixin, RuntimeParametersMixin,
                     PreAlignMixin, Node):
     def __init__(self):
         super().__init__()
+        self.task_progress = TaskProgress(super().get_logger())
+        self.progress_logger = ProgressLogger(self.task_progress)
         self.initialize_transactions()
         self._nav_client = TrackedActionClient(self, self._nav_client)
         self.task_lock = threading.Lock()
         self.restore_service = self.create_service(
             Trigger, '/restore_navigation_parameters', self.restore_callback,
             callback_group=self.reentrant_group)
+
+    def get_logger(self):
+        return getattr(self, 'progress_logger', None) or super().get_logger()
 
     def restore_callback(self, request, response):
         if not self.task_lock.acquire(blocking=False):
@@ -57,35 +63,50 @@ class FunctionRuntime(NodeSetupMixin, DefaultsMixin, RuntimeParametersMixin,
         if not self.task_lock.acquire(blocking=False):
             response.success = False
             response.message = '已有任务执行中，请等待结束或先急停'
+            self.get_logger().warn(f'[任务拒绝] 编号 {request.target} | {response.message}')
             return response
+        task = self.task_configs.get(request.target)
+        if task is not None:
+            name = task.get('description', task.get('name', str(request.target)))
+        elif request.target in self.PRESET_GOALS:
+            point = self.PRESET_GOALS[request.target]
+            name = f'{point[4]}（模式 {point[5]}）'
+        else:
+            name = '未知功能'
+        self.cancel_current_task = False
+        self.task_progress.begin(f'编号 {request.target}：{name}')
+        cleanup_error = ''
         try:
             if self.parameter_transaction.active or self._nav_client.pending:
                 raise RuntimeError('上一任务参数未恢复，请调用 /restore_navigation_parameters')
-            self.cancel_current_task = False
             self.stop_nav_cmd_tracking('新任务：清除旧速度')
             if self.in_stair_mode:
                 self.stop_stair_mode()
+            self.task_progress.update('正在执行功能，等待结束条件')
             response.success = bool(dispatch(self, request)) and not self.cancel_current_task
-            response.message = '执行成功' if response.success else '任务失败或被中止'
         except Exception as exc:
             response.success = False
-            response.message = str(exc)
-            self.get_logger().error(response.message)
+            self.task_progress.fail(str(exc))
         finally:
+            self.task_progress.update('正在确认动作停止并恢复临时参数')
             self.manual_control_active = False
             self.manual_control_reason = ''
-            self.stop_nav_cmd_tracking('任务结束')
-            self.stop_stair_mode()
-            self.publish_manual_zero_speed('任务结束，速度清零')
             try:
+                self.stop_nav_cmd_tracking('任务收尾：速度清零')
+                self.stop_stair_mode()
+                self.publish_manual_zero_speed('任务收尾：手写控制速度清零')
                 self._nav_client.settle()
                 self.restore_temporary_parameters()
             except Exception as exc:
                 response.success = False
-                response.message += f'; {exc}'
-                self.get_logger().error(str(exc))
+                cleanup_error = str(exc)
             finally:
-                self.task_lock.release()
+                response.success = response.success and not self.cancel_current_task
+                try:
+                    response.message = self.task_progress.finish(
+                        response.success, self.cancel_current_task, cleanup_error)
+                finally:
+                    self.task_lock.release()
         return response
 
 
@@ -113,7 +134,6 @@ def run_runtime(menu=None, args=None):
             # Ctrl+C during execution cancels this request and returns to the menu.
             if signum == signal.SIGINT and active.is_set() and menu is not None:
                 cancel_requested.set()
-                print('\n正在中止当前功能，等待停止并恢复参数……', flush=True)
                 return
             stopped.set()
             cancel_requested.set()
@@ -145,7 +165,8 @@ def run_runtime(menu=None, args=None):
             while not stopped.wait(0.1):
                 pass
         else:
-            menu(server.PRESET_GOALS, server.task_configs, server.mode_configs, submit, stopped, active)
+            menu(server.PRESET_GOALS, server.task_configs, server.mode_configs, submit, stopped, active,
+                 progress=server.task_progress)
     except KeyboardInterrupt:
         pass
     finally:
@@ -153,6 +174,7 @@ def run_runtime(menu=None, args=None):
         for sig in previous_handlers:
             signal.signal(sig, signal.SIG_IGN)
         if server is not None:
+            server.task_progress.clear()
             server.cancel_current_task = True
             server.stop_nav_cmd_tracking('退出功能框架')
             server.stop_stair_mode()
