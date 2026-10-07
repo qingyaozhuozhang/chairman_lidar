@@ -15,6 +15,9 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
 
+from launch_ros.actions import ComposableNodeContainer
+from launch_ros.descriptions import ComposableNode
+
 
 def generate_launch_description():
     # Map fully qualified names to relative ones so the node's namespace can be prepended.
@@ -35,16 +38,17 @@ def generate_launch_description():
             {
                 "num_threads": 4,
                 "num_neighbors": 10,
-                "global_leaf_size": 0.15,
-                "registered_leaf_size": 0.15,
-                "max_dist_sq": 0.25,
-                "map_frame": "map",
-                "odom_frame": "odom",
-                "base_frame": "",
-                "lidar_frame": "",
-                "prior_pcd_file": "",
+                "global_leaf_size": 0.05,
+                "registered_leaf_size": 0.05,
+                "max_dist_sq": 100.0,
+                "map_frame": "map1",
+                "odom_frame": "odom1",
+                "base_frame": "camera_init",
+                "lidar_frame": "camera_init",
+                "prior_pcd_file": "src/odometry_navigation/fishbot_navigation2/PCD/scans.pcd",
             }
         ],
     )
 
+    # 3. 必须 return LaunchDescription
     return LaunchDescription([node])

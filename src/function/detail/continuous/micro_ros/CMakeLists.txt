@@ -1,6 +1,0 @@
-cmake_minimum_required(VERSION 3.8)
-project(micro_ros)
-find_package(ament_cmake REQUIRED)
-install(PROGRAMS agent.py DESTINATION lib/${PROJECT_NAME} RENAME agent)
-install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
-ament_package()

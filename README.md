@@ -44,10 +44,13 @@ chairman_navigation/
 │       │   ├── functions.yaml           # 特殊功能编号、说明、模块、参数
 │       │   └── modes/                   # 任务期间使用的速度/PID参数
 │       ├── detail/
-│       │   ├── continuous/              # 持续功能：各自是独立 ROS 包
+│       │   ├── continuous/              # 持续功能：独立 ROS 包或功能包集合
 │       │   │   ├── odometry/            # 包 odometry：/odom_map 等位姿转换
-│       │   │   └── micro_ros/           # 包 micro_ros：串口连接
-│       │   │       └── config/boot.yaml
+│       │   │   └── micro_ros/           # micro-ROS 包集合，与导航统一构建
+│       │   │       ├── launcher/        # ROS 包 micro_ros 的 CMakeLists.txt、package.xml
+│       │   │       ├── agent.py         # ros2 run micro_ros agent
+│       │   │       ├── config/boot.yaml
+│       │   │       └── src/             # micro_ros_setup、micro_ros_agent、micro_ros_msgs
 │       │   └── on_demand/               # 按需功能，Python 包 chairman_tasks
 │       │       ├── fixed_point/
 │       │       │   ├── task.py          # 定点导航实际实现
@@ -103,21 +106,22 @@ sudo apt install -y \
 
 ```bash
 rosdep update
-rosdep install --from-paths src configuration tool --ignore-src --rosdistro humble \
-  --skip-keys micro_ros_agent -r -y
+rosdep install --from-paths src configuration tool --ignore-src --rosdistro humble -r -y
 ```
 
-`micro_ros_agent` 由下表的外部工作空间提供，因此在上述 rosdep 命令中单独跳过；这不等于安装了 Agent。其余依赖报错需处理完成后再构建。
+`micro_ros_agent`、`micro_ros_msgs`、`micro_ros_setup` 已包含在项目源码中，rosdep 的 `--ignore-src` 会跳过这些本地包，仅安装其系统依赖。其余依赖报错需处理完成后再构建。
 
-下面的外部依赖需要分别准备，源码建议放在本工程之外：
+以下依赖需准备：
 
 | 依赖 | 准备方式 | 本工程中的用途 |
 |---|---|---|
 | Livox SDK2 | 按 [官方 C++ 安装说明](https://github.com/Livox-SDK/Livox-SDK2#2-installation) 编译并安装共享库和头文件 | `livox_ros_driver2` 的编译与运行依赖 |
 | small_gicp | 按 [官方 C++ 安装说明](https://github.com/koide3/small_gicp#installation) 安装头文件；仅安装 Python 包不能替代 C++ 依赖 | 当前保留的定位节点源码仍包含这些头文件，即使配准计算已禁用也需要准备 |
-| micro-ROS Agent | 使用 [micro_ros_setup 的 Humble 分支](https://github.com/micro-ROS/micro_ros_setup/tree/humble) 在外部工作空间构建 Agent，并匹配下位机固件 | `micro_ros` 包负责启动外部 `micro_ros_agent`；串口参数见第 2.3 节 |
+| micro-ROS Agent | 源码位于 `src/function/detail/continuous/micro_ros/src/`，随根目录 `colcon build` 一起构建 | 向匹配固件的下位机提供通信；首次编译需联网下载 Micro-XRCE-DDS-Agent 等构建依赖 |
 
-Agent 工作空间构建完成后，可将 `src/function/detail/continuous/micro_ros/config/boot.yaml` 中的 `workspace` 设为相对于本工程的路径，例如 `../uros_ws`；留空则必须在启动前加载能找到 Agent 的环境。暂不连接下位机时可用 `ros2 run configuration main_boot --no-micro-ros` 跳过 Agent。
+`micro_ros/` 是包集合目录，包描述文件位于 `launcher/`，因此 colcon 能继续发现同目录 `src/` 下的 Agent 和消息包。所有产物统一进入项目根目录的 `build/`、`install/`、`log/`，无需单独构建内部工作空间。
+
+`config/boot.yaml` 的 `workspace` 默认留空，直接使用 `source install/setup.bash` 加载的本项目 Agent。只有切换到外部 Agent 工作空间时才填写该字段。暂不连接下位机时可用 `ros2 run configuration main_boot --no-micro-ros` 跳过 Agent。
 
 ### 2.2 构建项目
 
@@ -131,11 +135,13 @@ source install/setup.bash
 
 Livox 驱动会自动选择当前 ROS2 提供的消息接口构建方式，不需要先进入驱动目录运行 `./build.sh humble`，也不需要传 `-DHUMBLE_ROS=humble`。首次构建和后续构建都可在本目录执行 `colcon build`。
 
+如果首次构建停在 `micro_ros_agent:build 6%`，查看 `log/latest_build/micro_ros_agent/stdout_stderr.log`。`Performing download step (git clone) for 'xrceagent'` 表示正在从 GitHub 下载依赖；连接超时会自动重试，需恢复网络后重新构建。成功下载和编译后，保留 `build/` 即可复用依赖缓存。
+
 内存紧张时，可用 `MAKEFLAGS="-j2 -l2" colcon build --executor sequential` 限制同时编译的数量。开发时也可选择 `colcon build --symlink-install`；新增模块或配置文件后仍需构建，以便安装到对应包中。
 
 `source /opt/ros/humble/setup.bash` 提供 ROS2 基础环境；`source install/setup.bash` 让当前终端找到本工程的功能包。它们不会让运行中的节点重新加载代码或参数。若使用的 Python 虚拟环境缺少 ROS 构建模块，退出该虚拟环境后重新加载 ROS 环境再构建。
 
-目前共 16 个包。新终端需要重新 `source install/setup.bash`。迁移电脑时复制源码，重新安装依赖和构建；[.gitignore](.gitignore) 已排除 `build/`、`install/`、`log/`、`runtime/` 和 `.configuration_backups/` 等本机生成内容。
+目前共 19 个包（包含 micro-ROS Agent、消息包和 setup 工具）。新终端需要重新 `source install/setup.bash`。迁移电脑时复制源码，重新安装依赖和构建；[.gitignore](.gitignore) 已排除 `build/`、`install/`、`log/`、`runtime/` 和 `.configuration_backups/` 等本机生成内容。
 
 ### 2.3 首次运行前确认参数
 
@@ -146,7 +152,7 @@ Livox 驱动会自动选择当前 ROS2 提供的消息接口构建方式，不�
 | Nav2 基础配置 | `src/config/fishbot_navigation2/nav2_params.yaml` | 机器人尺寸、控制器、代价地图等参数 |
 | 场地初始位姿与区域 | `src/config/odometry/initial_poses.yaml`、`src/config/odometry/regions.yaml` | 4 个场地的初始位姿及红蓝区域边界 |
 | 定点与任务模式 | `src/function/config/on_demand/` | 红蓝点位、任务参数、速度模式 |
-| 下位机通信 | `src/function/detail/continuous/micro_ros/config/boot.yaml` | 外部 Agent 工作空间、串口设备、波特率 |
+| 下位机通信 | `src/function/detail/continuous/micro_ros/config/boot.yaml` | 默认使用本项目 Agent；串口设备、波特率及可选外部工作空间 |
 | 地图和机器人模型 | `src/fishbot/fishbot_navigation2/launch/navigation2.launch.py` 及其引用资源 | 当前加载 `maps/room.yaml`、`PCD/test.pcd`；核对 URDF、TF 安装偏移和扫描范围 |
 
 按设备修改 `src/config/` 的雷达 IP、里程计初始位姿和 Nav2 基础参数，然后同步，例如：

@@ -17,7 +17,6 @@
 
 #include <memory>
 #include <string>
-
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "pcl/io/pcd_io.h"
 #include "rclcpp/rclcpp.hpp"
@@ -62,6 +61,8 @@ private:
   std::string robot_base_frame_;
   std::string lidar_frame_;
   std::string current_scan_frame_id_;
+  std::vector<double> init_pose_;          
+  std::string input_cloud_topic_; 
   rclcpp::Time last_scan_time_;
   Eigen::Isometry3d result_t_;
   Eigen::Isometry3d previous_result_t_;
@@ -75,7 +76,7 @@ private:
   std::shared_ptr<small_gicp::KdTree<pcl::PointCloud<pcl::PointCovariance>>> target_tree_;
   std::shared_ptr<small_gicp::KdTree<pcl::PointCloud<pcl::PointCovariance>>> source_tree_;
   std::shared_ptr<
-    small_gicp::Registration<small_gicp::GICPFactor, small_gicp::ParallelReductionOMP>>
+  small_gicp::Registration<small_gicp::GICPFactor, small_gicp::ParallelReductionOMP>>
     register_;
 
   rclcpp::TimerBase::SharedPtr transform_timer_;

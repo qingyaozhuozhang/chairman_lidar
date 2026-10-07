@@ -15,10 +15,10 @@ SELECTED_POSE = int(os.environ.get('SELECTED_POSE', '1'))
 
 # 定义 4 个固定的初始位姿预设，格式为: {编号: [INIT_X, INIT_Y, INIT_Z, INIT_W]}
 PRESET_POSES = {
-    1: [-5.082,  -1.500, -0.707, 0.707],  # 红_武馆
-    2: [5.708,   -5.257, 0.707,  0.707],  # 红_对抗
-    3: [-5.082,  1.500,  0.707, 0.707],   # 蓝_武馆
-    4: [5.708,   5.257,  -0.707, 0.707],  # 蓝_对抗
+    1: [-5.080,  -1.500, -0.707, 0.707],  # 红_武馆
+    2: [5.915,   -5.457, 0.707,  0.707],  # 红_对抗
+    3: [-5.080,  1.500,  0.707, 0.707],   # 蓝_武馆
+    4: [5.915,   5.457,  -0.707, 0.707],  # 蓝_对抗
 }
 
 # 根据选择的编号，自动解析对应的 XYZW 坐标
@@ -36,7 +36,7 @@ def generate_launch_description():
 
     rviz_config_dir = os.path.join(fishbot_navigation2_dir, 'config', 'rviz', 'nav2_default_view.rviz')
     map_yaml_path = os.path.join(fishbot_navigation2_dir, 'maps', 'room.yaml')
-    pcd_file_path = os.path.join(fishbot_navigation2_dir, 'PCD', 'test.pcd')
+    pcd_file_path = os.path.join(fishbot_navigation2_dir, 'PCD', 'scans.pcd')
     nav2_param_path = os.path.join(fishbot_navigation2_dir, 'config', 'nav2_params.yaml')
     urdf_path = os.path.join(fishbot_navigation2_dir, 'urdf', 'my_robot', 'my_robot.xacro')
 
@@ -172,20 +172,19 @@ def generate_launch_description():
             package='small_gicp_relocalization',
             executable='small_gicp_relocalization_node',
             name='small_gicp_relocalization',
-            remappings=[('registered_scan', '/cloud_registered')],
+            remappings = [("/tf", "tf"), ("/tf_static", "tf_static")],  
             parameters=[{
-                'num_threads': 4,
-                'num_neighbors': 20,
-                'global_leaf_size': 0.5,
-                'registered_leaf_size': 0.5,
-                'max_dist_sq': 0.25,
-                'map_frame': 'map',
-                'odom_frame': 'odom',
-                'base_frame': 'odom',
-                'lidar_frame': 'odom',
+                'num_threads': 16,
+                'num_neighbors': 10,
+                'global_leaf_size': 0.05,
+                'registered_leaf_size': 0.05,
+                'max_dist_sq': 4.0,
+                'map_frame': 'map1',
+                'odom_frame': 'odom1',
+                'base_frame': 'camera_init',
+                'lidar_frame': 'camera_init',
                 'robot_base_frame': 'base_footprint',
                 'prior_pcd_file': pcd_file_path,
-                'use_sim_time': use_sim_time,
             }]
         ),
 

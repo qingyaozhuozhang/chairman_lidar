@@ -1,4 +1,5 @@
-# workspace 相对于 chairman_navigation 根目录；留空使用已 source 的环境。
-workspace: ""  # 例如 ../uros_ws
+# Agent 与导航一起构建；留空使用项目 install/setup.bash 提供的环境。
+# 只有使用其他 Agent 工作空间时才填写相对于项目根目录的路径。
+workspace: ""
 device: /dev/ttyUSB0
 baud: 921600

@@ -15,11 +15,13 @@ src/function/
 │       ├── pre_align.yaml                  # 模式 3
 │       └── <新模式>.yaml
 ├── detail/
-│   ├── continuous/                         # 启动后持续工作：每个目录一个 ROS 包
+│   ├── continuous/                         # 启动后持续工作：ROS 包或功能包集合
 │   │   ├── odometry/                       # ros2 run odometry odometry
 │   │   └── micro_ros/                      # ros2 run micro_ros agent
+│   │       ├── launcher/                  # ROS 包 micro_ros 的构建文件
 │   │       ├── agent.py
-│   │       └── config/boot.yaml
+│   │       ├── config/boot.yaml
+│   │       └── src/                       # Agent、消息和 setup 包，统一构建
 │   └── on_demand/                          # 收到一次请求执行一次
 │       ├── fixed_point/
 │       │   ├── task.py                     # 实际定点导航逻辑

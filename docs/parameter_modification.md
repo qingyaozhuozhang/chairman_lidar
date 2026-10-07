@@ -199,18 +199,30 @@ ros2 service call /restore_navigation_parameters std_srvs/srv/Trigger '{}'
 唯一编辑文件：**`src/function/detail/continuous/micro_ros/config/boot.yaml`**。
 
 ```yaml
-workspace: "../uros_ws"
+workspace: ""
 device: /dev/ttyUSB1
 baud: 115200
 ```
 
 | 字段 | 说明 |
 |---|---|
-| `workspace` | 外部 Agent 工作空间，相对 `chairman_navigation/`；需存在 `install/setup.bash`。留空 `""` 则用已经 source 的环境 |
+| `workspace` | 默认留空 `""`，使用项目统一构建的 Agent。只有使用外部工作空间时才填写相对项目根目录的路径，外部目录需有 `install/setup.bash` |
 | `device` | 当前设备串口名，例如 `/dev/ttyUSB0`；设备路径本身是系统路径 |
 | `baud` | 整数波特率，须与下位机一致；原值为 921600 |
 
-该文件不在 `configuration/`，也不经过 `sync`。修改后：
+Agent 源码保留在 `src/function/detail/continuous/micro_ros/src/`，启动包的 `package.xml` 和 `CMakeLists.txt` 位于 `micro_ros/launcher/`，使 colcon 能从根目录同时发现启动包和 Agent。`agent.py`、`config/boot.yaml` 的编辑位置保持不变。
+
+首次运行或修改 Agent 源码时，在项目根目录执行即可：
+
+```bash
+source /opt/ros/humble/setup.bash
+colcon build
+source install/setup.bash
+```
+
+所有包使用根目录的 `install/`，不再加载 `micro_ros/install/` 或原来的 `/uros_ws`。首次编译需要准备系统依赖，并联网下载 Agent 的构建依赖。
+
+该配置文件不在 `configuration/`，也不经过 `sync`。修改后，在项目根目录执行：
 
 ```bash
 colcon build --symlink-install --base-paths src configuration tool --packages-select micro_ros
