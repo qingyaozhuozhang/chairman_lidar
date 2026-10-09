@@ -188,6 +188,24 @@ def generate_launch_description():
             }]
         ),
 
+        # 将 GICP 的 map1 -> odom1 转发为 Nav2 使用的 map -> odom。
+        launch_ros.actions.Node(
+            package='small_gicp_relocalization',
+            executable='tf_relay_node',
+            name='tf_relay_node',
+            output='screen',
+            parameters=[{
+                'source_parent': 'map1',
+                'source_child': 'odom1',
+                'target_parent': 'map',
+                'target_child': 'odom',
+                'publish_rate_hz': 20.0,
+                'time_offset_sec': 0.1,
+                'init_pose': [-5.08, -1.5, 0.0, 0.0, 0.0, -1.5708],
+                'use_sim_time': use_sim_time,
+            }],
+        ),
+
         # 9. 启动 Nav2 Map Server
         launch_ros.actions.Node(
             package='nav2_map_server',

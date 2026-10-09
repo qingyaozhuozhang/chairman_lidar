@@ -1,5 +1,9 @@
-"""带航向及横向纠偏的定距移动。run 是框架调用入口，下面是本功能的实际实现。"""
-from framework.core.imports import *
+"""沿起始车体方向定距移动，闭环修正航向与横向偏差。"""
+import math
+import time
+import rclpy
+from geometry_msgs.msg import Twist
+from chairman_tasks.special import motion
 
 
 def run(ctx, request):
@@ -8,10 +12,10 @@ def run(ctx, request):
 
 
 def move(node, linear_x, linear_y, target_distance):
-    node.get_logger().info('⏳ 正在同步最新里程计数据...')
+    node.task_progress.update('⏳ 正在同步最新里程计数据...')
 
     if not node.wait_for_odom():
-        node.get_logger().warn('⚠️ 无法获取里程计，移动任务取消')
+        node.task_progress.fail('⚠️ 无法获取里程计，移动任务取消')
         return False
 
     start_x = node.current_x
@@ -33,7 +37,7 @@ def move(node, linear_x, linear_y, target_distance):
     cross_dir_x = -global_dir_y
     cross_dir_y = global_dir_x
 
-    node.get_logger().info(
+    node.task_progress.update(
         f'🚀 开始闭环精准移动: 目标距离={target_distance}m，'
         f'启用 yaw 锁定 + 横向/旁向偏移修正'
     )
@@ -48,12 +52,12 @@ def move(node, linear_x, linear_y, target_distance):
 
     while rclpy.ok():
         if node.cancel_current_task:
-            node.get_logger().warn("🚫 移动任务被行为树中止")
+            node.task_progress.fail("🚫 移动任务被行为树中止")
             node.publish_manual_zero_speed()
             return False
 
         if node.current_x is None or node.current_y is None or node.current_yaw is None:
-            node.get_logger().warn('⚠️ 移动过程中里程计丢失，任务取消')
+            node.task_progress.fail('⚠️ 移动过程中里程计丢失，任务取消')
             node.publish_manual_zero_speed()
             return False
 
@@ -73,14 +77,14 @@ def move(node, linear_x, linear_y, target_distance):
         forward_error = target_distance - traveled_distance_in_dir
 
         cross_error = dx * cross_dir_x + dy * cross_dir_y
-        yaw_error = node.normalize_angle(start_yaw - node.current_yaw)
+        yaw_error = motion.normalize_angle(start_yaw - node.current_yaw)
 
         if (
             abs(forward_error) <= node.ERROR_TOLERANCE_DIST and
             abs(cross_error) <= node.ERROR_TOLERANCE_CROSS and
             abs(yaw_error) <= node.ERROR_TOLERANCE_YAW
         ):
-            node.get_logger().info(
+            node.task_progress.update(
                 f'✅ 闭环移动完成: forward_error={forward_error:+.4f} m, '
                 f'cross_error={cross_error:+.4f} m, '
                 f'yaw_error={math.degrees(yaw_error):+.2f}°'
@@ -88,7 +92,7 @@ def move(node, linear_x, linear_y, target_distance):
             break
 
         if (now - start_time).nanoseconds / 1e9 > 30.0:
-            node.get_logger().warn(
+            node.task_progress.fail(
                 f'⚠️ 强制移动超时！forward_error={forward_error:+.4f} m, '
                 f'cross_error={cross_error:+.4f} m, '
                 f'yaw_error={math.degrees(yaw_error):+.2f}°'
@@ -110,25 +114,25 @@ def move(node, linear_x, linear_y, target_distance):
             else:
                 forward_speed = 0.0
 
-        cross_speed = node.compute_cross_track_speed(cross_error)
+        cross_speed = motion.compute_cross_track_speed(node, cross_error)
 
         target_vx_global = global_dir_x * forward_speed + cross_dir_x * cross_speed
         target_vy_global = global_dir_y * forward_speed + cross_dir_y * cross_speed
 
-        target_vx, target_vy = node.global_velocity_to_body(
+        target_vx, target_vy = motion.global_velocity_to_body(
             target_vx_global,
             target_vy_global,
             node.current_yaw
         )
 
         target_omega = node.KP_YAW_CORRECT * yaw_error
-        target_omega = node.clamp(
+        target_omega = motion.clamp(
             target_omega,
             -node.MAX_VEL_ANGULAR * node.YAW_CORRECT_MAX_RATIO,
             node.MAX_VEL_ANGULAR * node.YAW_CORRECT_MAX_RATIO
         )
 
-        current_vx = node.apply_accel_limits(
+        current_vx = motion.apply_accel_limits(
             current_vx,
             target_vx,
             node.MAX_ACCEL[0],
@@ -136,7 +140,7 @@ def move(node, linear_x, linear_y, target_distance):
             dt
         )
 
-        current_vy = node.apply_accel_limits(
+        current_vy = motion.apply_accel_limits(
             current_vy,
             target_vy,
             node.MAX_ACCEL[1],
@@ -144,7 +148,7 @@ def move(node, linear_x, linear_y, target_distance):
             dt
         )
 
-        current_omega = node.apply_accel_limits(
+        current_omega = motion.apply_accel_limits(
             current_omega,
             target_omega,
             node.MAX_ACCEL[2],

@@ -22,7 +22,6 @@ class OdometryTransformMath : public rclcpp::Node
 public:
     OdometryTransformMath() : Node("odometry_transform_math")
     {
-        // ================= 参数声明 =================
         this->declare_parameter("selected_pose", 1);
         
         this->declare_parameter("default_inflation_radius", 0.5); 
@@ -39,7 +38,6 @@ public:
         this->declare_parameter("lidar_init_qz", 0.000);
         this->declare_parameter("lidar_init_qw", 1.000);
 
-        // ================= 读取参数 =================
         int selected_pose = static_cast<int>(this->get_parameter("selected_pose").as_int());
         default_inflation_radius_ = this->get_parameter("default_inflation_radius").as_double();
 
@@ -55,7 +53,7 @@ public:
         float lqz = static_cast<float>(this->get_parameter("lidar_init_qz").as_double());
         float lqw = static_cast<float>(this->get_parameter("lidar_init_qw").as_double());
 
-        // ================= 偏移量计算 =================
+        // 偏移量计算
         float map_yaw = 2.0f * std::atan2(mqz, mqw);
         float lidar_yaw = 2.0f * std::atan2(lqz, lqw);
 
@@ -67,7 +65,7 @@ public:
         offset_z_ = lz - mz; 
         offset_yaw_ = lidar_yaw - map_yaw;
 
-        // ================= 加载 YAML 区域配置 =================
+        // 加载 YAML 区域配置
         try {
             std::string pkg_share = ament_index_cpp::get_package_share_directory("odometry");
             std::string yaml_path = pkg_share + "/config/regions.yaml";
@@ -94,7 +92,6 @@ public:
             RCLCPP_ERROR(this->get_logger(), "无法加载 regions.yaml! 报错: %s", e.what());
         }
 
-        // ================= 初始化 =================
         tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
         tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
         local_costmap_param_client_ = std::make_shared<rclcpp::AsyncParametersClient>(this, "/local_costmap/local_costmap");
@@ -183,14 +180,14 @@ private:
             }
         }
 
-        // ================= 基于 ID 的跨区域状态检测与参数推送 =================
+        // 基于 ID 的跨区域状态检测与参数推送
         // 判断当前区域是否属于“零膨胀区域”（ID 从 1 到 13）
         bool current_in_merlin = false;
         if (current_region_id >= 1 && current_region_id <= 13) {
             current_in_merlin = true;
         }
 
-        // 只有在 零膨胀区域 与 非零膨胀区域 之间发生【跨越】时，才发送修改指令
+        // 仅在零膨胀区与普通区域之间切换时更新代价地图参数。
         if (current_in_merlin != last_in_merlin_) {
             if (current_in_merlin) { 
                 RCLCPP_INFO(this->get_logger(), "🌟 小车进入梅林区域 [ID: %d, %s]，设置膨胀半径为 0.0", current_region_id, current_region_name.c_str());
@@ -202,7 +199,6 @@ private:
             }
             last_in_merlin_ = current_in_merlin; 
         }
-        // =========================================================================
 
         // 4. 坐标系转换：计算【自定义坐标系】下的位置
         float final_x = offset_x_ + (rx * std::cos(offset_yaw_) - ry * std::sin(offset_yaw_));
@@ -210,7 +206,6 @@ private:
         float final_yaw = offset_yaw_ + raw_yaw;
         float final_z = offset_z_ + rz; 
 
-        // 5. 构建自定义消息输出
         custom_msg::msg::PoseEuler pure_pose;
         pure_pose.x = final_x;            
         pure_pose.y = final_y;            
@@ -219,7 +214,6 @@ private:
 
         pose_pub_->publish(pure_pose);
 
-        // 6. 终端打印日志
         RCLCPP_INFO(this->get_logger(), 
             "X: %.3f m, Y: %.3f m, Z: %.3f m, Yaw: %.3f rad | ID: %d (%s) | (rx,ry): (%.3f, %.3f)", 
             pure_pose.x, pure_pose.y, pure_pose.z, pure_pose.yaw,

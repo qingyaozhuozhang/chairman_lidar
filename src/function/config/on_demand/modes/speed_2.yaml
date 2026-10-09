@@ -1,0 +1,193 @@
+# 完整列出本模式使用的 Nav2 参数块；未调节的字段保留启动基准值。
+# 标记“启动项”的字段仅供查看，请在 nav2_params.yaml 中修改并重启 Nav2。
+# 其余字段通过参数服务临时赋值，任务结束恢复运行前的值。
+id: 2
+name: speed_2
+base_mode: 2
+switch_distance: 1.5  # 距目标大于此值用冲刺组；进入此距离后改用精调组（m）
+switch_check_period: 0.05  # 行驶中检查目标距离的周期，s
+
+# 近点精调：进入 switch_distance 后使用。
+# 两组使用相同的 Nav2 参数名，分别配置各阶段的控制值。
+parameters:
+  controller_server:
+    ros__parameters:
+      use_sim_time: True  # 启动项
+      controller_frequency: 20.0  # 启动项
+      min_x_velocity_threshold: 0.001  # 启动项
+      min_y_velocity_threshold: 0.001  # 启动项
+      min_theta_velocity_threshold: 0.001  # 启动项
+      failure_tolerance: 0.3  # 启动项
+      progress_checker_plugin: "progress_checker"  # 启动项
+      goal_checker_plugins: ["general_goal_checker"]  # 启动项
+      controller_plugins: ["FollowPath"]  # 启动项
+
+      progress_checker:
+        plugin: "nav2_controller::SimpleProgressChecker"  # 启动项
+        required_movement_radius: 0.1
+        movement_time_allowance: 10.0
+
+      general_goal_checker:
+        stateful: True
+        plugin: "nav2_controller::SimpleGoalChecker"  # 启动项
+        xy_goal_tolerance: 0.02
+        yaw_goal_tolerance: 0.02
+
+      # 全向轮 PID 路径跟踪控制器
+      FollowPath:
+        plugin: "pb_omni_pid_pursuit_controller::OmniPidPursuitController"  # 启动项
+
+        # 平移 PID
+        translation_kp: 4.0
+        translation_ki: 0.0
+        translation_kd: 0.0
+
+        # 旋转 PID
+        enable_rotation: true  # 行驶期间允许旋转
+        rotation_kp: 1.5
+        rotation_ki: 0.0
+        rotation_kd: 0.0
+
+        transform_tolerance: 1.0        # TF 时间容差（秒）
+        min_max_sum_error: 1.0
+
+        # 路径跟踪前瞻距离：单位 m；lookahead_time 单位 s。
+        lookahead_dist: 0.3
+        use_velocity_scaled_lookahead_dist: true
+        lookahead_time: 0.5
+        min_lookahead_dist: 0.15
+        max_lookahead_dist: 1.2
+
+        use_interpolation: true
+        use_rotate_to_heading: true  # 按目标朝向计算旋转误差
+        rotate_to_goal_heading_only: true  # 使用最终目标姿态计算航向误差
+        yaw_hold_tolerance: 0.01  # 朝向误差低于此值时停止角速度输出（弧度）
+        use_rotate_to_heading_treshold: 0.1
+        min_approach_linear_velocity: 0.08
+        # 朝向误差超出容差时的最小自转角速度
+        min_approach_angular_velocity: 0.05
+        # 最小角速度补偿的朝向误差门槛（弧度）
+        min_approach_angular_velocity_tolerance: 0.01
+        approach_velocity_scaling_dist: 0.3
+
+        # 全向轮速度限制
+        v_linear_min: -1.5
+        v_linear_max: 1.5
+        v_angular_min: -1.5
+        v_angular_max: 1.5
+
+        # 根据路径曲率动态减速
+        curvature_min: 0.4
+        curvature_max: 0.7
+        reduction_ratio_at_high_curvature: 0.5
+        curvature_forward_dist: 0.7
+        curvature_backward_dist: 0.3
+        max_velocity_scaling_factor_rate: 0.9
+
+  velocity_smoother:
+    ros__parameters:
+      use_sim_time: True  # 启动项
+      smoothing_frequency: 20.0
+      scale_velocities: False  # 启动项
+      feedback: "OPEN_LOOP"
+      max_velocity: [1.5, 1.5, 1.5]
+      min_velocity: [-1.5, -1.5, -1.5]
+      max_accel: [2.0, 2.0, 1.5]
+      max_decel: [-2.0, -2.0, -1.5]
+      odom_topic: "odom"
+      odom_duration: 0.1
+      deadband_velocity: [0.0, 0.0, 0.0]
+      velocity_timeout: 1.0
+
+
+# 远处冲刺：初始距离大于 switch_distance 时使用。
+# 进入 switch_distance 后切换到上面的 parameters；任务结束恢复任务前的参数。
+sprint_parameters:
+  controller_server:
+    ros__parameters:
+      use_sim_time: True  # 启动项
+      controller_frequency: 20.0  # 启动项
+      min_x_velocity_threshold: 0.001  # 启动项
+      min_y_velocity_threshold: 0.001  # 启动项
+      min_theta_velocity_threshold: 0.001  # 启动项
+      failure_tolerance: 0.3  # 启动项
+      progress_checker_plugin: "progress_checker"  # 启动项
+      goal_checker_plugins: ["general_goal_checker"]  # 启动项
+      controller_plugins: ["FollowPath"]  # 启动项
+
+      progress_checker:
+        plugin: "nav2_controller::SimpleProgressChecker"  # 启动项
+        required_movement_radius: 0.1
+        movement_time_allowance: 10.0
+
+      general_goal_checker:
+        stateful: True
+        plugin: "nav2_controller::SimpleGoalChecker"  # 启动项
+        xy_goal_tolerance: 0.03
+        yaw_goal_tolerance: 0.03
+
+      # 全向轮 PID 路径跟踪控制器
+      FollowPath:
+        plugin: "pb_omni_pid_pursuit_controller::OmniPidPursuitController"  # 启动项
+
+        # 平移 PID
+        translation_kp: 10.0
+        translation_ki: 0.0
+        translation_kd: 0.0
+
+        # 旋转 PID
+        enable_rotation: true  # 行驶期间允许旋转
+        rotation_kp: 3.0
+        rotation_ki: 0.0
+        rotation_kd: 0.0
+
+        transform_tolerance: 1.0        # TF 时间容差（秒）
+        min_max_sum_error: 1.0
+
+        # 路径跟踪前瞻距离：单位 m；lookahead_time 单位 s。
+        lookahead_dist: 0.3
+        use_velocity_scaled_lookahead_dist: true
+        lookahead_time: 0.5
+        min_lookahead_dist: 0.15
+        max_lookahead_dist: 1.2
+
+        use_interpolation: true
+        use_rotate_to_heading: false  # 冲刺阶段关闭转向目标朝向
+        rotate_to_goal_heading_only: false  # 冲刺阶段不启用仅追最终目标朝向
+        yaw_hold_tolerance: 0.03  # 朝向误差低于此值时停止角速度输出（弧度）
+        use_rotate_to_heading_treshold: 0.1
+        min_approach_linear_velocity: 0.12
+        # 朝向误差超出容差时的最小自转角速度
+        min_approach_angular_velocity: 0.1
+        # 最小角速度补偿的朝向误差门槛（弧度）
+        min_approach_angular_velocity_tolerance: 0.01
+        approach_velocity_scaling_dist: 0.18
+
+        # 全向轮速度限制
+        v_linear_min: -3.0
+        v_linear_max: 3.0
+        v_angular_min: -2.5
+        v_angular_max: 2.5
+
+        # 根据路径曲率动态减速
+        curvature_min: 0.4
+        curvature_max: 0.7
+        reduction_ratio_at_high_curvature: 0.5
+        curvature_forward_dist: 0.7
+        curvature_backward_dist: 0.3
+        max_velocity_scaling_factor_rate: 0.9
+
+  velocity_smoother:
+    ros__parameters:
+      use_sim_time: True  # 启动项
+      smoothing_frequency: 20.0
+      scale_velocities: False  # 启动项
+      feedback: "OPEN_LOOP"
+      max_velocity: [3.0, 3.0, 2.5]
+      min_velocity: [-3.0, -3.0, -2.5]
+      max_accel: [6.0, 6.0, 3.5]
+      max_decel: [-7.0, -7.0, -4.0]
+      odom_topic: "odom"
+      odom_duration: 0.1
+      deadband_velocity: [0.0, 0.0, 0.0]
+      velocity_timeout: 1.0

@@ -9,6 +9,7 @@
   <author email="lihanchen2004@163.com">Lihan Chen</author>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_auto</buildtool_depend>
 
   <depend>rclcpp</depend>
   <depend>rclcpp_components</depend>

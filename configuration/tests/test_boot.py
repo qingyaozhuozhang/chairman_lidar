@@ -40,6 +40,7 @@ def test_commands_quote_relocated_workspace(tmp_path):
     assert [name for name, _ in commands] == ['Navigation2', 'Function sum', 'Odometry']
     assert all("source '" in command and 'SELECTED_POSE=4' in command for _, command in commands)
     assert commands[1][1].endswith('preset_nav_node')
+    assert all(f"cd '{root / 'log/robot'}'" in command for _, command in commands)
 
 
 def test_shutdown_defers_repeated_signals_and_stops_function_first(monkeypatch):
@@ -98,6 +99,9 @@ def test_default_boot_opens_sum_in_its_own_terminal(tmp_path, monkeypatch):
     assert function_terminal[:1] == ['gnome-terminal']
     assert function_terminal[-1].endswith('exec ros2 run framework sum')
     assert all('export SELECTED_POSE=2' in argv[-1] for argv in launches)
+    assert (tmp_path / 'log/robot/Log').is_dir()
+    assert (tmp_path / 'log/robot/PCD').is_dir()
+    assert not (tmp_path / 'runtime').exists()
 
 
 def test_no_sum_cli_does_not_launch_function_terminal(tmp_path, monkeypatch):

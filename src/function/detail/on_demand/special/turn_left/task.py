@@ -1,5 +1,9 @@
-"""闭环旋转 +90 度。run 是框架调用入口，下面是本功能的实际实现。"""
-from framework.core.imports import *
+"""原地闭环旋转；目标角度单位为度，正值为左转、负值为右转。"""
+import math
+import time
+import rclpy
+from geometry_msgs.msg import Twist
+from chairman_tasks.special import motion
 
 
 def run(ctx, request):
@@ -8,17 +12,17 @@ def run(ctx, request):
 
 
 def rotate(node, target_angle_degrees):
-    node.get_logger().info('⏳ 正在同步最新里程计数据...')
+    node.task_progress.update('⏳ 正在同步最新里程计数据...')
 
     if not node.wait_for_odom():
-        node.get_logger().warn('⚠️ 无法获取里程计，旋转任务取消')
+        node.task_progress.fail('⚠️ 无法获取里程计，旋转任务取消')
         return False
 
     target_yaw = node.current_yaw + math.radians(target_angle_degrees)
-    target_yaw = node.normalize_angle(target_yaw)
+    target_yaw = motion.normalize_angle(target_yaw)
 
     twist_msg = Twist()
-    node.get_logger().info(f'🚀 开始闭环精准旋转: {target_angle_degrees}度')
+    node.task_progress.update(f'🚀 开始闭环精准旋转: {target_angle_degrees}度')
 
     start_time = node.get_clock().now()
     last_time = start_time
@@ -26,7 +30,7 @@ def rotate(node, target_angle_degrees):
 
     while rclpy.ok():
         if node.cancel_current_task:
-            node.get_logger().warn("🚫 旋转任务被行为树中止")
+            node.task_progress.fail("🚫 旋转任务被行为树中止")
             node.publish_manual_zero_speed()
             return False
 
@@ -39,11 +43,11 @@ def rotate(node, target_angle_degrees):
         last_time = now
 
         if (now - start_time).nanoseconds / 1e9 > 20.0:
-            node.get_logger().warn('⚠️ 强制旋转超时！')
+            node.task_progress.fail('⚠️ 强制旋转超时！')
             node.publish_manual_zero_speed()
             return False
 
-        error = node.normalize_angle(target_yaw - node.current_yaw)
+        error = motion.normalize_angle(target_yaw - node.current_yaw)
 
         if abs(error) <= node.ERROR_TOLERANCE_YAW:
             break
@@ -59,7 +63,7 @@ def rotate(node, target_angle_degrees):
         else:
             target_omega = 0.0
 
-        current_omega = node.apply_accel_limits(
+        current_omega = motion.apply_accel_limits(
             current_omega,
             target_omega,
             node.MAX_ACCEL[2],

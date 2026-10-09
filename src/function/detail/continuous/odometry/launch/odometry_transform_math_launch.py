@@ -1,4 +1,4 @@
-# Compatibility alias for the original launch command.
+# 兼容启动入口，复用 odometry.launch.py。
 import runpy
 from pathlib import Path
 

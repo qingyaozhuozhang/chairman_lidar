@@ -19,9 +19,9 @@ def load_source(name, relative):
 
 
 actions = load_source('pre_align_actions', 'src/function/framework/core/actions.py')
-pre_align = load_source('pre_align_impl', 'src/function/detail/on_demand/fixed_point/modes/pre_align.py')
-fixed = load_source('pre_align_fixed', 'src/function/detail/on_demand/fixed_point/task.py')
-progress = load_source('task_progress', 'src/function/framework/core/progress.py')
+from rclpy.time import Time
+pre_align = load_source('pre_align_impl', 'src/function/detail/on_demand/fixed_point/task.py')
+progress = load_source('task_progress', 'src/function/framework/sum.py')
 
 
 def done(value):
@@ -59,7 +59,7 @@ class Handle:
         return done(SimpleNamespace(return_code=0))
 
 
-class Robot(pre_align.PreAlignMixin, fixed.FixedPointMixin):
+class Robot:
     def __init__(self, initial_x, *, release='yaw', cancel_delay=0.08, emergency=False):
         self.initial_x = initial_x
         self.release = release
@@ -67,18 +67,22 @@ class Robot(pre_align.PreAlignMixin, fixed.FixedPointMixin):
         self.emergency_during_handoff = emergency
         self.cancel_current_task = False
         self.nav_cmd_tracking_enabled = False
-        self.nav2_profile_3_pre_align_enabled = True
-        self.nav2_profile_3_pre_align_distance = 0.5
-        self.nav2_profile_3_pre_align_release_xy_tolerance = 0.1
-        self.nav2_profile_3_pre_align_release_yaw_tolerance = 0.15
-        self.nav2_profile_3_pre_align_near_adjust_timeout = 0.0
+        self.pre_align_enabled = True
+        self.pre_align_distance = 0.5
+        self.pre_align_release_xy_tolerance = 0.1
+        self.pre_align_release_yaw_tolerance = 0.15
+        self.pre_align_near_adjust_timeout = 0.0
         self.handles = []
         self.goals = []
         self.timers = []
         self.events = []
         self.messages = []
+        self.stages = []
+        self.speed_profiles = {1: {}, 2: {}, 3: {}}
         self.task_progress = progress.TaskProgress(self.get_logger())
         self.task_progress.begin('测试点')
+        self.task_progress.stage = lambda name, detail='': self.stages.append(('start', name))
+        self.task_progress.end_stage = lambda result: self.stages.append(('end', result))
         self._nav_client = actions.TrackedActionClient(self, self, timeout=0.5)
 
     def get_logger(self):
@@ -86,7 +90,7 @@ class Robot(pre_align.PreAlignMixin, fixed.FixedPointMixin):
                                error=self.messages.append, debug=self.messages.append)
 
     def get_clock(self):
-        return SimpleNamespace(now=lambda: SimpleNamespace(to_msg=lambda: pre_align.rclpy.time.Time().to_msg()))
+        return SimpleNamespace(now=lambda: SimpleNamespace(to_msg=lambda: Time().to_msg()))
 
     def wait_for_server(self, timeout_sec):
         return True
@@ -108,10 +112,10 @@ class Robot(pre_align.PreAlignMixin, fixed.FixedPointMixin):
         position = self.goals[0].pose.pose.position
         return position.x, position.y, 0.4 if self.release == 'near_timeout' else 0.0
 
-    def select_initial_nav2_profile(self, profile, *args):
+    def initial_profile(self, profile, *args):
         return profile
 
-    def apply_nav2_speed_profile(self, profile):
+    def apply_profile(self, profile):
         pass
 
     def normalize_angle(self, angle):
@@ -127,11 +131,11 @@ class Robot(pre_align.PreAlignMixin, fixed.FixedPointMixin):
     def wait_future_done(self, future, timeout_sec):
         return future.done()
 
-    def maybe_switch_nav2_profile_2_by_distance(self, *args):
+    def update_dynamic_profile(self, *args):
         pass
 
     def run(self):
-        return self.execute_profile3_pre_yaw_align_goal(2.0, 0.0, 0.0, 1.0, '测试点')
+        return pre_align.navigate_pre_align(self, 2.0, 0.0, 0.0, 1.0, '测试点')
 
     def close(self):
         for timer in self.timers:
@@ -141,6 +145,7 @@ class Robot(pre_align.PreAlignMixin, fixed.FixedPointMixin):
 @pytest.fixture(autouse=True)
 def ros_is_running(monkeypatch):
     monkeypatch.setattr(actions.rclpy, 'ok', lambda: True)
+    monkeypatch.setattr(pre_align, 'apply_profile', lambda *_: None)
 
 
 @pytest.mark.parametrize('initial_x', [0.0, 1.75], ids=['approach_point', 'turn_in_place'])
@@ -151,13 +156,10 @@ def test_second_stage_waits_for_terminal_result(initial_x, release):
         assert robot.run(), '\n'.join(robot.messages)
         assert robot.events[-2:] == [('second_goal', True), ('stop', 2)]
         assert robot.goals[1].pose.pose.position.x == 2.0
-        first_end = next(i for i, m in enumerate(robot.messages) if '[阶段结束] 模式3 1/2' in m)
-        second_start = next(i for i, m in enumerate(robot.messages) if '[阶段开始] 模式3 2/2' in m)
-        assert first_end < second_start
+        assert [kind for kind, _ in robot.stages] == ['start', 'end', 'start', 'end']
         if release == 'near_timeout':
-            assert '按配置放行' in robot.messages[first_end]
-            assert '转正完成' not in '\n'.join(robot.messages)
-        assert not any('[任务完成]' in m for m in robot.messages), '动作阶段不得提前报告整次任务完成'
+            assert '按配置放行' in robot.stages[1][1]
+        assert len(robot.messages) == 1, '只有任务开始；阶段状态不应打印日志'
         robot._nav_client.settle()
         assert not robot._nav_client.pending
     finally:

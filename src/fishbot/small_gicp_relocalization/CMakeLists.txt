@@ -25,7 +25,7 @@ ament_auto_find_build_dependencies()
 ###########
 
 ament_auto_add_library(${PROJECT_NAME} SHARED
-  DIRECTORY src
+  src/small_gicp_relocalization.cpp
 )
 
 target_link_libraries(${PROJECT_NAME} OpenMP::OpenMP_CXX)
@@ -34,6 +34,10 @@ rclcpp_components_register_node(${PROJECT_NAME}
   PLUGIN small_gicp_relocalization::SmallGicpRelocalizationNode
   EXECUTABLE ${PROJECT_NAME}_node
 )
+
+add_executable(tf_relay_node src/tf.cpp)
+ament_target_dependencies(tf_relay_node rclcpp geometry_msgs tf2 tf2_ros)
+install(TARGETS tf_relay_node DESTINATION lib/${PROJECT_NAME})
 
 #############
 ## Testing ##

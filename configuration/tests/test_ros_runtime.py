@@ -27,12 +27,12 @@ def scene():
     from rclpy.executors import MultiThreadedExecutor
     from nav2_msgs.action import NavigateToPose
     from custom_msg.srv import SetNavTarget
-    from framework.core.runtime import FunctionRuntime
+    from chairman_tasks.task import TaskServer
 
     assert os.environ.get('ROS_LOCALHOST_ONLY') == '1', 'Use localhost-only DDS for fake tests'
     assert os.environ.get('ROS_DOMAIN_ID') == '197', 'Use the dedicated test domain 197'
     rclpy.init()
-    node = FunctionRuntime()
+    node = TaskServer()
     node.PRESET_GOALS = dict(node.PRESET_GOALS)
     for mode in (1, 2, 3):
         node.PRESET_GOALS[mode] = [0.0, 0.0, 0.0, 1.0, 'TEST', mode]
@@ -40,8 +40,8 @@ def scene():
     controller = Node('controller_server')
     smoother = Node('velocity_smoother')
     baselines = {}
-    for remote, group in ((controller, 'controller'), (smoother, 'velocity_smoother')):
-        values = node.NAV2_SPEED_PROFILES[1][group]
+    for remote, group in ((controller, 'controller_server'), (smoother, 'velocity_smoother')):
+        values = node.speed_profiles[1][group]
         for key, value in values.items():
             remote.declare_parameter(key, value)
         baselines[remote] = {k: remote.get_parameter(k).to_parameter_msg().value for k in values}
@@ -51,6 +51,7 @@ def scene():
     def execute(handle):
         state['started'] = True
         state['observed_kp'] = controller.get_parameter('FollowPath.translation_kp').value
+        state['observed_sim_time'] = controller.get_parameter('use_sim_time').value
         while state['hold'] and not handle.is_cancel_requested:
             time.sleep(0.01)
         if handle.is_cancel_requested:
@@ -94,7 +95,7 @@ def scene():
 @pytest.mark.parametrize('mode', [1, 2, 3])
 def test_modes_restore_real_ros_parameters(scene, mode, monkeypatch):
     from custom_msg.srv import SetNavTarget
-    node, _, _, client, _, check = scene
+    node, _, _, client, state, check = scene
     finish = node.task_progress.finish
     reported = []
 
@@ -107,6 +108,7 @@ def test_modes_restore_real_ros_parameters(scene, mode, monkeypatch):
     result = wait(client.call_async(SetNavTarget.Request(target=mode)))
     assert result.success, result.message
     assert reported == [True]
+    assert state['observed_sim_time'] is False, '完整模式表不能把实车节点切到仿真时钟'
     assert result.message.startswith('[任务完成]')
     expected = {1: '模式1 基础导航', 2: '模式2 精调', 3: '模式3 2/2'}[mode]
     assert f'结束位置：{expected}' in result.message
@@ -119,7 +121,7 @@ def test_partial_remote_rejection_restores_controller(scene):
     node, controller, smoother, client, _, check = scene
     # Mode2 differs from baseline; reject only its smoother update, accept restore.
     smoother.add_on_set_parameters_callback(lambda ps: SetParametersResult(
-        successful=not any(p.name == 'max_velocity' and list(p.value) == node.NAV2_SPEED_PROFILES[2]['velocity_smoother']['max_velocity'] for p in ps),
+        successful=not any(p.name == 'max_velocity' and list(p.value) == node.speed_profiles[2]['velocity_smoother']['max_velocity'] for p in ps),
         reason='test rejection'))
     result = wait(client.call_async(SetNavTarget.Request(target=2)))
     assert not result.success
@@ -170,24 +172,25 @@ def test_failed_restore_is_not_reported_as_completed(scene, monkeypatch):
         raise TimeoutError('模拟参数恢复超时')
 
     with monkeypatch.context() as patch:
-        patch.setattr(node, 'restore_temporary_parameters', fail_restore)
+        patch.setattr(node, 'restore_parameters', fail_restore)
         result = wait(client.call_async(SetNavTarget.Request(target=1)))
         assert not result.success
         assert result.message.startswith('[任务失败]')
         assert '停止/参数恢复尚未确认' in result.message
         assert '临时参数已恢复' not in result.message
-    node.restore_temporary_parameters()
+    node.restore_parameters()
     check()
 
 
-def test_switch_failure_during_running_goal_cancels_goal(scene, capfd):
+def test_switch_failure_during_running_goal_cancels_goal(scene, capfd, monkeypatch):
     from custom_msg.srv import SetNavTarget
     from rcl_interfaces.msg import SetParametersResult
     node, controller, _, client, state, check = scene
     state['hold'] = True
-    node.get_nav2_distance_to_goal = lambda *args, **kwargs: 0.0 if state['started'] else 10.0
+    from chairman_tasks.fixed_point import task as navigation
+    monkeypatch.setattr(navigation, 'distance_to_goal', lambda *args, **kwargs: 0.0 if state['started'] else 10.0)
     controller.add_on_set_parameters_callback(lambda ps: SetParametersResult(
-        successful=not any(p.name == 'FollowPath.translation_kp' and p.value == node.NAV2_SPEED_PROFILES[2]['controller']['FollowPath.translation_kp'] for p in ps),
+        successful=not any(p.name == 'FollowPath.translation_kp' and p.value == node.speed_profiles[2]['controller_server']['FollowPath.translation_kp'] for p in ps),
         reason='test fine-mode rejection'))
     result = wait(client.call_async(SetNavTarget.Request(target=2)))
     assert not result.success
@@ -197,24 +200,25 @@ def test_switch_failure_during_running_goal_cancels_goal(scene, capfd):
     check()
 
 
-def test_mode2_switch_reports_fine_stage_only_after_parameters_apply(scene, capfd):
+def test_mode2_switch_reports_fine_stage_only_after_parameters_apply(scene, capfd, monkeypatch):
     from custom_msg.srv import SetNavTarget
     node, _, _, client, state, check = scene
     state['hold'] = True
-    node.get_nav2_distance_to_goal = lambda *args, **kwargs: 0.0 if state['started'] else 10.0
+    from chairman_tasks.fixed_point import task as navigation
+    monkeypatch.setattr(navigation, 'distance_to_goal', lambda *args, **kwargs: 0.0 if state['started'] else 10.0)
     future = client.call_async(SetNavTarget.Request(target=2))
     deadline = time.monotonic() + 6
     while '模式2 精调' not in node.task_progress.stage_name:
         assert time.monotonic() < deadline
         time.sleep(0.01)
-    assert node.current_nav2_speed_profile == 2
+    assert node.current_profile == 2
     state['hold'] = False
     result = wait(future)
     assert result.success, result.message
     assert '结束位置：模式2 精调' in result.message
     output = capfd.readouterr().err
-    assert output.index('[阶段开始] 模式2 冲刺') < output.index('[阶段结束] 模式2 冲刺')
-    assert output.index('[阶段结束] 模式2 冲刺') < output.index('[阶段开始] 模式2 精调')
+    assert '[阶段开始]' not in output and '[阶段结束]' not in output
+    assert output.count('[任务开始]') == 1
     assert output.count('[任务完成]') == 1
     check()
 
@@ -224,7 +228,7 @@ def test_new_mode_inherits_algorithm_applies_override_and_restores(scene, base_m
     from custom_msg.srv import SetNavTarget
     node, _, _, client, state, check = scene
     node.mode_configs[4] = {'id': 4, 'name': 'precise', 'base_mode': base_mode,
-                            'overrides': {'controller_server': {'FollowPath.translation_kp': 9.125}}}
+                            'parameters': {'controller_server': {'ros__parameters': {'FollowPath': {'translation_kp': 9.125}}}}}
     node.PRESET_GOALS[33] = [0.0, 0.0, 0.0, 1.0, 'new point', 4]
     result = wait(client.call_async(SetNavTarget.Request(target=33)))
     assert result.success, result.message
@@ -237,7 +241,7 @@ def test_new_sequence_task_uses_context_without_changing_dispatch(scene, monkeyp
     from types import ModuleType
     from custom_msg.srv import SetNavTarget
     node, controller, _, client, state, check = scene
-    node.mode_configs[4] = {'id': 4, 'base_mode': 1, 'overrides': {'controller_server': {'FollowPath.translation_kp': 9.125}}}
+    node.mode_configs[4] = {'id': 4, 'base_mode': 1, 'parameters': {'controller_server': {'ros__parameters': {'FollowPath': {'translation_kp': 9.125}}}}}
     baseline_kp = controller.get_parameter('FollowPath.translation_kp').value
     observed = []
 
@@ -304,7 +308,7 @@ def test_sum_without_arguments_cancels_then_returns_to_menu(field):
         assert f'场地编号: {field or 1}' in ''.join(transcript)
         process.stdin.write('-11\n')
         process.stdin.flush()
-        until('抬升自检测启动')
+        until('[任务开始]')
         os.killpg(process.pid, signal.SIGINT)
         until('[任务中止]')
         until('菜单中 q 或 Ctrl+C 退出')

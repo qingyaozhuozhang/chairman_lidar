@@ -13,5 +13,11 @@
   "livox_ros_driver2/display_point_cloud_ROS2.rviz": "src/fishbot/livox_ros_driver2/config/display_point_cloud_ROS2.rviz",
   "livox_ros_driver2/HAP_config.json": "src/fishbot/livox_ros_driver2/config/HAP_config.json",
   "odometry/regions.yaml": "src/function/detail/continuous/odometry/config/regions.yaml",
-  "odometry/initial_poses.yaml": "src/function/detail/continuous/odometry/config/initial_poses.yaml"
+  "odometry/initial_poses.yaml": "src/function/detail/continuous/odometry/config/initial_poses.yaml",
+  "framework/on_demand/points.yaml": "src/function/config/on_demand/points.yaml",
+  "framework/on_demand/functions.yaml": "src/function/config/on_demand/functions.yaml",
+  "framework/on_demand/modes/special.yaml": "src/function/config/on_demand/modes/special.yaml",
+  "framework/on_demand/modes/speed_1.yaml": "src/function/config/on_demand/modes/speed_1.yaml",
+  "framework/on_demand/modes/speed_2.yaml": "src/function/config/on_demand/modes/speed_2.yaml",
+  "framework/on_demand/modes/speed_3.yaml": "src/function/config/on_demand/modes/speed_3.yaml"
 }

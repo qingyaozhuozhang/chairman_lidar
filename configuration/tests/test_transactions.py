@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-PATH = Path(__file__).parents[2] / 'src/function/framework/core/transaction.py'
+PATH = Path(__file__).parents[2] / 'src/function/framework/core/parameters.py'
 spec = importlib.util.spec_from_file_location('transaction', PATH)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)

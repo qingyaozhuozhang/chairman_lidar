@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ROS2 entry point for the original odometry transform launch."""
+"""odometry 命令入口：启动 odometry.launch.py 并转发命令行参数。"""
 import os
 import sys
 

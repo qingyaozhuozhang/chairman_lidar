@@ -1,5 +1,9 @@
-"""世界 X 方向上坡控制。run 是框架调用入口，下面是本功能的实际实现。"""
-from framework.core.imports import *
+"""沿地图正 X 方向上坡，闭环控制距离、横向偏差和起始航向。"""
+import math
+import time
+import rclpy
+from geometry_msgs.msg import Twist
+from chairman_tasks.special import motion
 
 
 def run(ctx, request):
@@ -11,7 +15,7 @@ def climb(node, target_distance=None):
     if target_distance is None:
         target_distance = node.UPHILL_GLOBAL_X_DISTANCE
 
-    node.get_logger().info('⏳ -2 正在获取 map 全局位姿，准备沿全局 X 轴正方向直走...')
+    node.task_progress.update('⏳ -2 正在获取 map 全局位姿，准备沿全局 X 轴正方向直走...')
     node.flush_odom_queue()
 
     pose = None
@@ -28,7 +32,7 @@ def climb(node, target_distance=None):
             break
 
         if time.time() - wait_start > 3.0:
-            node.get_logger().error('❌ -2 启动失败：3 秒内无法获取 map -> base_footprint 位姿')
+            node.task_progress.fail('❌ -2 启动失败：3 秒内无法获取 map -> base_footprint 位姿')
             node.publish_manual_zero_speed()
             return False
 
@@ -39,7 +43,7 @@ def climb(node, target_distance=None):
     target_y = start_y
     target_yaw = start_yaw
 
-    node.get_logger().info(
+    node.task_progress.update(
         f'vx:+0.000 m/s，'
         f'x:+0.0000m，'
         f'y偏移:+0.0000 m，'
@@ -58,7 +62,7 @@ def climb(node, target_distance=None):
 
     while rclpy.ok():
         if node.cancel_current_task:
-            node.get_logger().warn('⚠️ -2 收到取消标志，正在停车退出')
+            node.task_progress.fail('⚠️ -2 收到取消标志，正在停车退出')
             break
 
         now = time.time()
@@ -85,14 +89,14 @@ def climb(node, target_distance=None):
         forward_error = target_x - current_x
         x_traveled = current_x - start_x
         cross_error = current_y - target_y
-        yaw_error = node.normalize_angle(target_yaw - current_yaw)
+        yaw_error = motion.normalize_angle(target_yaw - current_yaw)
 
         if (
             abs(forward_error) <= node.UPHILL_ERROR_TOLERANCE_DIST and
             abs(cross_error) <= node.UPHILL_ERROR_TOLERANCE_CROSS and
             abs(yaw_error) <= node.UPHILL_ERROR_TOLERANCE_YAW
         ):
-            node.get_logger().info(
+            node.task_progress.update(
                 f'vx:+0.000 m/s，'
                 f'x:{x_traveled:+.4f}m，'
                 f'y偏移:{cross_error:+.4f} m，'
@@ -102,7 +106,7 @@ def climb(node, target_distance=None):
             break
 
         if now - start_time > node.UPHILL_GLOBAL_X_TIMEOUT:
-            node.get_logger().warn(
+            node.task_progress.fail(
                 f'vx:+0.000 m/s，'
                 f'x:{x_traveled:+.4f}m，'
                 f'y偏移:{cross_error:+.4f} m，'
@@ -124,9 +128,9 @@ def climb(node, target_distance=None):
             else:
                 vx_global = min(-node.UPHILL_MIN_VEL_LINEAR, -speed_abs)
 
-        vy_global = node.compute_uphill_cross_track_speed(cross_error)
+        vy_global = motion.compute_uphill_cross_track_speed(node, cross_error)
 
-        target_vx, target_vy = node.global_velocity_to_body(
+        target_vx, target_vy = motion.global_velocity_to_body(
             vx_global,
             vy_global,
             current_yaw
@@ -139,12 +143,12 @@ def climb(node, target_distance=None):
                 node.UPHILL_MAX_VEL_ANGULAR * node.UPHILL_YAW_CORRECT_MAX_RATIO
             )
             target_omega = node.UPHILL_KP_YAW_CORRECT * yaw_error
-            target_omega = node.clamp(target_omega, -max_correct_omega, max_correct_omega)
+            target_omega = motion.clamp(target_omega, -max_correct_omega, max_correct_omega)
 
             if 0.0 < abs(target_omega) < node.UPHILL_MIN_VEL_ANGULAR:
                 target_omega = math.copysign(node.UPHILL_MIN_VEL_ANGULAR, target_omega)
 
-        current_vx = node.apply_accel_limits(
+        current_vx = motion.apply_accel_limits(
             current_vx,
             target_vx,
             node.UPHILL_MAX_ACCEL[0],
@@ -152,7 +156,7 @@ def climb(node, target_distance=None):
             dt
         )
 
-        current_vy = node.apply_accel_limits(
+        current_vy = motion.apply_accel_limits(
             current_vy,
             target_vy,
             node.UPHILL_MAX_ACCEL[1],
@@ -160,7 +164,7 @@ def climb(node, target_distance=None):
             dt
         )
 
-        current_omega = node.apply_accel_limits(
+        current_omega = motion.apply_accel_limits(
             current_omega,
             target_omega,
             node.UPHILL_MAX_ACCEL[2],
@@ -189,6 +193,6 @@ def climb(node, target_distance=None):
     twist_msg.angular.z = 0.0
     node.publish_twist_speed(twist_msg)
     time.sleep(node.CONTROL_PERIOD)
-    node.get_logger().info('✅ -2 已停车，返回主服务流程\n')
+    node.task_progress.update('✅ -2 已停车，返回主服务流程\n')
 
     return task_success

@@ -73,7 +73,7 @@ def build_commands(root, selected_pose, no_micro=False, no_sum=False, headless=F
     setup = root / 'install/setup.bash'
     if not setup.is_file():
         raise ValueError('尚未构建工作空间：缺少 install/setup.bash')
-    common = f'source {shlex.quote(str(setup))} && export SELECTED_POSE={selected_pose} && cd {shlex.quote(str(root / "runtime"))} && '
+    common = f'source {shlex.quote(str(setup))} && export SELECTED_POSE={selected_pose} && cd {shlex.quote(str(root / "log" / "robot"))} && '
     commands = []
     if not no_micro:
         commands.append(('Micro ROS Agent', common + 'exec ros2 run micro_ros agent'))
@@ -115,7 +115,7 @@ def main(args=None):
         if options.dry_run:
             return
         for subdir in ('Log','PCD'):
-            (root / 'runtime' / subdir).mkdir(parents=True, exist_ok=True)
+            (root / 'log' / 'robot' / subdir).mkdir(parents=True, exist_ok=True)
         terminal = 'gnome-terminal'
         if not options.headless and not shutil.which(terminal):
             raise ValueError(f'找不到 {terminal}，可使用 --headless')

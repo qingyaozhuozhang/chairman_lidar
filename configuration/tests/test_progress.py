@@ -7,7 +7,7 @@ import pytest
 
 
 spec = importlib.util.spec_from_file_location(
-    'task_progress', Path(__file__).parents[2] / 'src/function/framework/core/progress.py')
+    'task_progress', Path(__file__).parents[2] / 'src/function/framework/sum.py')
 progress = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(progress)
 
@@ -35,9 +35,13 @@ def test_nonterminal_keeps_boundaries_without_periodic_log_spam():
         state.update(f'距提前点 {i}m')
         state.render()
     assert stream.getvalue() == ''
-    assert len(messages) == 2
+    assert len(messages) == 1
     state.end_stage('第一段动作已结束')
-    assert not any('[任务完成]' in m for m in messages)
+    assert len(messages) == 1
+    state.finish(True)
+    assert len(messages) == 2
+    assert messages[0].startswith('[任务开始]')
+    assert messages[1].startswith('[任务完成]')
 
 
 def test_tty_updates_one_line_throttles_and_clears_before_logs(monkeypatch):

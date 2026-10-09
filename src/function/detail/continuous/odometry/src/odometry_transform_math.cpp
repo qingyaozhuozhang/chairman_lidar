@@ -35,7 +35,6 @@ class OdometryTransformMath : public rclcpp::Node
 public:
     OdometryTransformMath() : Node("odometry_transform_math")
     {
-        // ================= 参数声明 =================
         this->declare_parameter("selected_pose", 1);
 
         this->declare_parameter("default_inflation_radius", 0.5);
@@ -47,14 +46,13 @@ public:
         this->declare_parameter("lidar_init_qz", -0.707);
         this->declare_parameter("lidar_init_qw", 0.707);
 
-        // ================= 启动阶段 TF 稳定检测参数 =================
+        // 启动阶段 TF 稳定检测参数
         this->declare_parameter("required_tf_stable_count", 20);
         this->declare_parameter("tf_jump_threshold", 0.01);
 
-        // TF 第一次稳定后，强制发布几次 /initialpose
+        // TF 首次稳定后按配置次数发布初始位姿。
         this->declare_parameter("initialpose_publish_after_stable_count", 1);
 
-        // ================= 读取参数 =================
         selected_pose_ = static_cast<int>(this->get_parameter("selected_pose").as_int());
 
         default_inflation_radius_ =
@@ -94,7 +92,7 @@ public:
             initialpose_publish_after_stable_count_ = 0;
         }
 
-        // ================= 加载 YAML 区域配置 =================
+        // 加载 YAML 区域配置
         try {
             std::string pkg_share =
                 ament_index_cpp::get_package_share_directory("odometry");
@@ -139,11 +137,9 @@ public:
             );
         }
 
-        // ================= 初始化 TF =================
         tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
         tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
-        // ================= 参数客户端 =================
         local_costmap_param_client_ =
             std::make_shared<rclcpp::AsyncParametersClient>(
                 this,
@@ -156,7 +152,6 @@ public:
                 "/global_costmap/global_costmap"
             );
 
-        // ================= 订阅发布 =================
         odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
             "odom_raw",
             rclcpp::SensorDataQoS(),
@@ -453,7 +448,7 @@ private:
                 return;
             }
         } else {
-            // 正常运行阶段：只读取 TF，不再判断 jump
+            // 稳定性检查仅用于启动阶段；运行期间直接使用当前 TF。
             bool tf_ok = lookup_map_base_tf(map_x, map_y, map_z, map_yaw);
 
             if (!tf_ok) {
@@ -540,7 +535,7 @@ private:
     }
 
 private:
-    // ================= 基础参数 =================
+    // 基础参数
     int selected_pose_ = 1;
 
     float lidar_init_x_ = 0.0f;
@@ -551,16 +546,16 @@ private:
 
     std::vector<Region> regions_;
 
-    // ================= ROS 通信 =================
+    // ROS 通信
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
     rclcpp::Publisher<custom_msg::msg::PoseEuler>::SharedPtr pose_pub_;
     rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr init_pub_;
 
-    // ================= TF =================
+    // TF
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
-    // ================= 启动阶段 TF 稳定检测 =================
+    // 启动阶段 TF 稳定检测
     bool startup_tf_stable_done_ = false;
     bool has_last_startup_tf_ = false;
 
@@ -572,13 +567,13 @@ private:
 
     double tf_jump_threshold_ = 0.01;
 
-    // ================= initialpose 阶段 =================
+    // initialpose 阶段
     bool initialpose_stage_done_ = false;
 
     int initialpose_publish_count_ = 0;
     int initialpose_publish_after_stable_count_ = 1;
 
-    // ================= 动态参数客户端 =================
+    // 动态参数客户端
     rclcpp::AsyncParametersClient::SharedPtr local_costmap_param_client_;
     rclcpp::AsyncParametersClient::SharedPtr global_costmap_param_client_;
 

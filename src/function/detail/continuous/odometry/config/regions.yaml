@@ -1,4 +1,4 @@
-# ====== 第一套方案 (启动时输入 1 或 2 时使用: 红方) ======
+# 红方区域：SELECTED_POSE 为 1 或 2；坐标单位 m。
 regions_red:
   - id: 0
     name: "武馆"
@@ -97,7 +97,7 @@ regions_red:
     y_min: -6.02
     y_max: -0.02
 
-# ====== 第二套方案 (启动时输入 3 或 4 时使用: 蓝方) ======
+# 蓝方区域：SELECTED_POSE 为 3 或 4；坐标单位 m。
 regions_blue:
   - id: 0
     name: "武馆"

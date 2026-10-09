@@ -39,6 +39,36 @@ cd ..
 
 ## Usage
 
+### Standalone executables
+
+The package installs two C++ executables:
+
+```bash
+ros2 run small_gicp_relocalization small_gicp_relocalization_node
+ros2 run small_gicp_relocalization tf_relay_node
+```
+
+`tf_relay_node` reads `map1 -> odom1` and republishes the same transform as
+`map -> odom`. It publishes the configured initial transform until the source
+becomes available, then retains the latest valid source transform. Output
+timestamps use the current ROS clock plus `time_offset_sec`.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `source_parent`, `source_child` | `map1`, `odom1` | Source TF pair |
+| `target_parent`, `target_child` | `map`, `odom` | Published TF pair |
+| `publish_rate_hz` | `20.0` | Output rate; range `(0, 1000]` |
+| `time_offset_sec` | `0.1` | Output timestamp offset in seconds |
+| `init_pose` | `[-5.08, -1.5, 0.0, 0.0, 0.0, -1.5708]` | Initial `[x, y, z, roll, pitch, yaw]`, meters/radians |
+| `use_sim_time` | `false` | Use the ROS simulation clock |
+
+`fishbot_navigation2/launch/navigation2.launch.py` starts both executables.
+The relay's `init_pose` is the fallback map-to-odom transform, not a robot pose
+subscription. Edit its parameters in that launch file for the actual map.
+Only one relay should publish the target TF pair at a time.
+
+### Localization launch
+
 1. Set prior pointcloud file in [launch file](launch/small_gicp_relocalization_launch.py)
 
 2. Adjust the transformation between `base_frame` and `lidar_frame`

@@ -1,5 +1,7 @@
-"""计算目标并调用定点导航。run 是框架调用入口，下面是本功能的实际实现。"""
-from framework.core.imports import *
+"""将车体偏置转换为地图目标，目标航向取当前航向最近的 90° 倍数。"""
+import math
+from chairman_tasks.special import motion
+from chairman_tasks.fixed_point import task as navigation
 
 
 def run(ctx, request):
@@ -27,20 +29,21 @@ def navigate(node, kfs_offset, speed_profile=1):
     target_x = current_x + map_offset_x
     target_y = current_y + map_offset_y
 
-    target_yaw = node.snap_yaw_to_nearest_90(current_yaw)
+    target_yaw = motion.snap_yaw_to_nearest_90(current_yaw)
     target_qz = math.sin(target_yaw / 2.0)
     target_qw = math.cos(target_yaw / 2.0)
 
     offset_distance = math.hypot(local_x, local_y)
 
-    node.get_logger().info(
+    node.task_progress.update(
         f'🎯 16号KFS局部偏置导航：'
         f'偏置距离 local_x={local_x:+.3f} m，'
         f'local_y={local_y:+.3f} m，'
         f'合成距离={offset_distance:.3f} m'
     )
 
-    return node.execute_nav2_goal(
+    # 偏置目标采用单段导航，speed_profile 选择对应参数组。
+    return navigation.navigate(node,
         target_x,
         target_y,
         target_qz,

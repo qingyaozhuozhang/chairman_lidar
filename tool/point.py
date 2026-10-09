@@ -3,7 +3,7 @@
 """chairman_lidar 点位标定：直接采集 /odom_map 的 10 条消息，逐项去极值取平均。
 
 ros2 run tool point
-  定点：src/function/config/on_demand/points.yaml，只更新 x/y。
+  定点：src/config/framework/on_demand/points.yaml，只更新 x/y。
   区域：src/config/odometry/regions.yaml，中心 ±0.6 m。
 只写源码配置；定点修改后构建 framework、重启功能进程，区域修改后 sync、重启相关节点。
 """
@@ -24,7 +24,7 @@ from yaml.nodes import MappingNode, ScalarNode, SequenceNode
 
 SAMPLE_COUNT = 10
 REGION_HALF_SIZE = 0.6
-POINTS_PATH = Path('src/function/config/on_demand/points.yaml')
+POINTS_PATH = Path('src/config/framework/on_demand/points.yaml')
 REGIONS_PATH = Path('src/config/odometry/regions.yaml')
 
 
@@ -362,7 +362,7 @@ def run_mode(collector, path, is_region, timeout):
                     print('区域为中心±0.6m。生效：ros2 run chairman_config sync --files odometry/regions.yaml；'
                           '重启 odometry 与 framework 功能进程。')
                 else:
-                    print('已保留朝向、名称和模式。生效：colcon build --packages-select framework；'
+                    print('已保留朝向、名称和模式。生效：ros2 run chairman_config sync --files framework/on_demand/points.yaml；'
                           '重启 framework 功能进程。')
             except (OSError, ValueError, RuntimeError, yaml.YAMLError) as exc:
                 print(f'本次标定未完成：{exc}')

@@ -35,7 +35,7 @@ def agent_command(config, root=None):
             '在项目根目录运行 colcon build 并 source install/setup.bash；'
             '使用外部 Agent 时请先构建对应工作空间'
         )
-    # Replace this process so signals go straight to the ROS command.
+    # 使用 exec 将进程替换为 Agent，使退出信号直接传递。
     return ['bash', '-c', f'source {shlex.quote(str(setup))} && exec {shlex.join(agent)}']
 
 
