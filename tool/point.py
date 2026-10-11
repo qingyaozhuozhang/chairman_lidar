@@ -19,7 +19,6 @@ import sys
 import tempfile
 import threading
 import time
-import uuid
 
 import yaml
 from yaml.nodes import MappingNode, ScalarNode, SequenceNode
@@ -263,20 +262,11 @@ def atomic_write(path, text):
 
 
 def commit_updates(updates):
-    """全部校验、备份后逐文件替换；发生异常时恢复本批次已修改的文件。"""
+    """全部校验后逐文件替换；仅在内存保留原文，用于写入异常时恢复。"""
     for path, (original, _) in updates.items():
         if path.read_text(encoding='utf-8') != original:
             raise RuntimeError(f'配置已被其他编辑器修改，请重新选择点位：{path}')
     changed = {path: texts for path, texts in updates.items() if texts[0] != texts[1]}
-    backups = {}
-    for path, (original, _) in changed.items():
-        directory = path.parent / '.point_backups'
-        if directory.is_symlink():
-            raise ValueError(f'备份目录不能是符号链接：{directory}')
-        directory.mkdir(exist_ok=True)
-        backup = directory / f'{path.name}.{time.time_ns()}-{uuid.uuid4().hex[:8]}.bak'
-        backup.write_text(original, encoding='utf-8')
-        backups[path] = backup
     attempted = []
     try:
         for path, (original, updated) in changed.items():
@@ -294,11 +284,11 @@ def commit_updates(updates):
                 if path.read_text(encoding='utf-8') != original:
                     atomic_write(path, original)
             except OSError as restore_error:
-                failures.append(f'{path}：{restore_error}；备份：{backups[path]}')
+                failures.append(f'{path}：{restore_error}')
         if failures:
             raise RuntimeError('写入失败且部分文件恢复失败：' + '；'.join(failures)) from exc
         raise
-    return backups
+    return set(changed)
 
 
 def prepare_point_xy(path, side, point_id, x, y):
@@ -338,11 +328,11 @@ def prepare_region_center(path, side, region_id, x, y):
 
 
 def update_point_xy(path, side, point_id, x, y):
-    return commit_updates({path: prepare_point_xy(path, side, point_id, x, y)}).get(path)
+    return path in commit_updates({path: prepare_point_xy(path, side, point_id, x, y)})
 
 
 def update_region_center(path, side, region_id, x, y):
-    return commit_updates({path: prepare_region_center(path, side, region_id, x, y)}).get(path)
+    return path in commit_updates({path: prepare_region_center(path, side, region_id, x, y)})
 
 
 def ask(prompt):
@@ -421,10 +411,10 @@ def run_mode(collector, path, is_region, timeout, workspace=None):
                         updates[target] = prepare(target, side, selected, avg.x, avg.y)
                     except (OSError, ValueError, yaml.YAMLError) as exc:
                         raise ValueError(f'{target}：{exc}') from exc
-                backups = commit_updates(updates)
+                changed = commit_updates(updates)
                 for target in paths:
-                    if target in backups:
-                        print(f'已保存并校验：{target}\n原文件备份：{backups[target]}')
+                    if target in changed:
+                        print(f'已保存并校验：{target}')
                     else:
                         print(f'坐标未变化：{target}')
                 if is_region:

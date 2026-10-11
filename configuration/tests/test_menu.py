@@ -37,8 +37,8 @@ def test_menu_waits_for_completion_then_allows_next_selection():
 
     menu.menu_loop(POINTS, TASKS, MODES, submit, threading.Event(), active, read, output.append)
     assert submitted == [(1, (0, 0, 0))]
-    assert output.count('\nchairman_navigation 功能菜单') == 2
-    assert output.index('完成：arrived') < len(output) - 1 - output[::-1].index('\nchairman_navigation 功能菜单')
+    assert output.count('\nchairman_lidar 功能菜单') == 2
+    assert output.index('完成：arrived') < len(output) - 1 - output[::-1].index('\nchairman_lidar 功能菜单')
     assert '完成：arrived' in output
 
 
@@ -56,7 +56,7 @@ def test_offset_prompt_and_failure_return_to_menu():
     menu.menu_loop(POINTS, TASKS, MODES, submit, threading.Event(), threading.Event(), lambda _: next(answers), output.append)
     assert calls == [(-9, (0.2, -0.1, 0.0)), (1, (0, 0, 0))]
     assert output.count('未完成：cancelled') == 2
-    assert output.count('\nchairman_navigation 功能菜单') == 3
+    assert output.count('\nchairman_lidar 功能菜单') == 3
 
 
 def test_unknown_id_and_invalid_offset_do_not_submit():
@@ -85,4 +85,4 @@ def test_menu_can_be_shown_on_request_without_submitting():
     output = []
     menu.menu_loop(POINTS, TASKS, MODES, lambda *_: pytest.fail('unexpected submit'),
                    threading.Event(), threading.Event(), lambda _: next(answers), output.append)
-    assert output.count('\nchairman_navigation 功能菜单') == 3
+    assert output.count('\nchairman_lidar 功能菜单') == 3

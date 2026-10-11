@@ -3,7 +3,6 @@
 # 其余字段通过参数服务临时赋值，任务结束恢复运行前的值。
 id: 2
 name: speed_2
-base_mode: 2
 switch_distance: 1.5  # 距目标大于此值用冲刺组；进入此距离后改用精调组（m）
 switch_check_period: 0.05  # 行驶中检查目标距离的周期，s
 

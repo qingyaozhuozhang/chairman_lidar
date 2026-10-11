@@ -110,7 +110,7 @@ def test_modes_restore_real_ros_parameters(scene, mode, monkeypatch):
     assert reported == [True]
     assert state['observed_sim_time'] is False, '完整模式表不能把实车节点切到仿真时钟'
     assert result.message.startswith('[任务完成]')
-    expected = {1: '模式1 基础导航', 2: '模式2 精调', 3: '模式3 2/2'}[mode]
+    expected = {1: '模式1 直接导航', 2: '模式2 精调', 3: '模式3 2/2'}[mode]
     assert f'结束位置：{expected}' in result.message
     check()
 
@@ -159,7 +159,7 @@ def test_nav2_abort_reports_failure_and_exact_stage(scene, mode):
     assert not result.success
     assert result.message.startswith('[任务失败]')
     assert 'ABORTED' in result.message and '状态码 6' in result.message
-    expected = {1: '模式1 基础导航', 2: '模式2 冲刺', 3: '模式3 1/2'}[mode]
+    expected = {1: '模式1 直接导航', 2: '模式2 冲刺', 3: '模式3 1/2'}[mode]
     assert f'结束位置：{expected}' in result.message
     check()
 
@@ -223,12 +223,23 @@ def test_mode2_switch_reports_fine_stage_only_after_parameters_apply(scene, capf
     check()
 
 
-@pytest.mark.parametrize('base_mode', [1, 2, 3])
-def test_new_mode_inherits_algorithm_applies_override_and_restores(scene, base_mode):
+def register_independent_mode(node, template_id=1):
+    from copy import deepcopy
+    from chairman_tasks.config import dynamic_parameters
+    mode = deepcopy(node.mode_configs[template_id])
+    mode.update(id=4, name='precise')
+    mode['parameters']['controller_server']['ros__parameters']['FollowPath']['translation_kp'] = 9.125
+    node.mode_configs[4] = mode
+    node.speed_profiles[4] = dynamic_parameters(mode['parameters'])
+    if 'sprint_parameters' in mode:
+        node.speed_profiles['4_sprint'] = dynamic_parameters(mode['sprint_parameters'])
+
+
+@pytest.mark.parametrize('template_id', [1, 2, 3])
+def test_new_independent_mode_applies_own_values_and_restores(scene, template_id):
     from custom_msg.srv import SetNavTarget
     node, _, _, client, state, check = scene
-    node.mode_configs[4] = {'id': 4, 'name': 'precise', 'base_mode': base_mode,
-                            'parameters': {'controller_server': {'ros__parameters': {'FollowPath': {'translation_kp': 9.125}}}}}
+    register_independent_mode(node, template_id)
     node.PRESET_GOALS[33] = [0.0, 0.0, 0.0, 1.0, 'new point', 4]
     result = wait(client.call_async(SetNavTarget.Request(target=33)))
     assert result.success, result.message
@@ -241,7 +252,7 @@ def test_new_sequence_task_uses_context_without_changing_dispatch(scene, monkeyp
     from types import ModuleType
     from custom_msg.srv import SetNavTarget
     node, controller, _, client, state, check = scene
-    node.mode_configs[4] = {'id': 4, 'base_mode': 1, 'parameters': {'controller_server': {'ros__parameters': {'FollowPath': {'translation_kp': 9.125}}}}}
+    register_independent_mode(node)
     baseline_kp = controller.get_parameter('FollowPath.translation_kp').value
     observed = []
 
@@ -313,7 +324,7 @@ def test_sum_without_arguments_cancels_then_returns_to_menu(field):
         until('[任务中止]')
         until('菜单中 q 或 Ctrl+C 退出')
         text = ''.join(transcript)
-        assert text.count('chairman_navigation 功能菜单') == 2
+        assert text.count('chairman_lidar 功能菜单') == 2
         assert text.count('[任务开始]') == 1
         assert text.count('[任务中止]') == 1
         assert '\x1b[2K' not in text, '管道日志不能写入终端刷新字符'

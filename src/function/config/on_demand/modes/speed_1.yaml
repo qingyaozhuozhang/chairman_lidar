@@ -3,7 +3,6 @@
 # 其余字段通过参数服务临时赋值，任务结束恢复运行前的值。
 id: 1
 name: speed_1
-base_mode: 1
 
 parameters:
   controller_server:

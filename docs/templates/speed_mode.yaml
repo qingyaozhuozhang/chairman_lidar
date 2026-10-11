@@ -2,8 +2,7 @@
 # 标记“启动项”的字段仅供查看，请在 nav2_params.yaml 中修改并重启 Nav2。
 # 其余字段通过参数服务临时赋值，任务结束恢复运行前的值。
 id: 4
-name: precise
-base_mode: 1
+name: speed_4
 
 parameters:
   controller_server:

@@ -1,4 +1,4 @@
-"""读取并校验点位、功能、速度模式和手写运动参数。"""
+"""读取并校验点位、功能、速度模式和特殊运动参数。"""
 import math
 import os
 from pathlib import Path
@@ -60,22 +60,38 @@ def load_modes(root=None):
             raise ValueError(f'模式id重复: {key}')
         if not isinstance(mode.get('name'), str) or not mode['name'].strip():
             raise ValueError(f'{path.name}: name必须为非空字符串')
-        base = mode.get('base_mode')
-        if type(base) is not int or base not in (1, 2, 3):
-            raise ValueError(f'{path.name}: base_mode 必须为1/2/3')
-        if key in (1, 2, 3) and key != base:
-            raise ValueError('内置模式1/2/3的base_mode必须等于自身编号')
         for section in ('parameters', 'sprint_parameters'):
             flatten_parameters(mode.get(section, {}))
-        if key in (1, 2, 3) and not mode.get('parameters'):
+        if not dynamic_parameters(mode.get('parameters', {})):
             raise ValueError(f'{path.name}: 缺少 parameters 原生参数表')
-        if key == 2 and not mode.get('sprint_parameters'):
-            raise ValueError('speed_2.yaml 缺少 sprint_parameters')
+        if 'sprint_parameters' in mode:
+            # 两阶段必须赋值同一组字段，避免精调阶段残留冲刺值。
+            fields = lambda section: {node: set(values) for node, values in
+                                      dynamic_parameters(mode[section]).items()}
+            if fields('sprint_parameters') != fields('parameters'):
+                raise ValueError(f'{path.name}: sprint_parameters 与 parameters 必须包含相同的动态参数')
+            for name, default in (('switch_distance', 1.5), ('switch_check_period', 0.05)):
+                value = mode.setdefault(name, default)
+                if (type(value) not in (int, float) or not math.isfinite(value)
+                        or value < 0 or (name == 'switch_check_period' and value == 0)):
+                    raise ValueError(f'{path.name}: {name} 必须为有限非负数，检查周期必须大于零')
         if not isinstance(mode.get('pre_align', {}), dict):
             raise ValueError(f'{path.name}: pre_align 必须为字典')
+        if 'pre_align' in mode:
+            align = mode['pre_align']
+            for name, default in {'enabled': True, 'distance': 0.5, 'release_xy_tolerance': 0.1,
+                                  'release_yaw_tolerance': 0.15, 'near_adjust_timeout': 0.5}.items():
+                value = align.setdefault(name, default)
+                if name == 'enabled':
+                    if type(value) is not bool:
+                        raise ValueError(f'{path.name}: pre_align.enabled 必须为布尔值')
+                elif type(value) not in (float, int) or not math.isfinite(value) or value < 0:
+                    raise ValueError(f'{path.name}: pre_align.{name} 必须为非负有限数值')
+            if align['enabled'] and 'sprint_parameters' in mode:
+                raise ValueError(f'{path.name}: 冲刺精调与提前对齐应分别配置为独立模式')
         result[key] = mode
-    if not {1, 2, 3}.issubset(result):
-        raise ValueError('缺少原模式1、2或3')
+    if not result:
+        raise ValueError('未配置速度模式')
     return result
 
 
@@ -198,9 +214,9 @@ def dynamic_parameters(nodes):
 
 
 def load_special_parameters(root=None, node=None):
-    """读取 Nav2 同名参数，供本地手写控制使用；不修改运行中的 Nav2。
+    """读取 Nav2 同名参数，供本地特殊运动控制使用；不修改运行中的 Nav2。
 
-    YAML 和 ROS 参数使用原生名称，下面显式对应手写控制函数的内部属性。
+    YAML 和 ROS 参数使用原生名称，下面显式对应特殊运动控制函数的内部属性。
     减速度按 Nav2 约定写负值，内部制动计算使用其幅值。
     """
     config = read_yaml(config_root(root) / 'on_demand/modes/special.yaml')
@@ -289,25 +305,14 @@ def load_configuration(node):
     node.task_configs = load_tasks(red, blue)
     selected = read_selected_pose()
     node.PRESET_GOALS = red if selected in (1, 2) else blue
-    node.speed_profiles = {key: dynamic_parameters(node.mode_configs[key]['parameters']) for key in (1,2,3)}
-    node.speed_profiles['2_sprint'] = dynamic_parameters(node.mode_configs[2]['sprint_parameters'])
+    node.speed_profiles = {}
+    for key, mode in node.mode_configs.items():
+        node.speed_profiles[key] = dynamic_parameters(mode['parameters'])
+        if 'sprint_parameters' in mode:
+            node.speed_profiles[f'{key}_sprint'] = dynamic_parameters(mode['sprint_parameters'])
     node.active_mode = None
     node.current_profile = None
-    node.dynamic_sprint_key = '2_sprint'
     node.dynamic_last_check_time = None
-    dynamic = node.mode_configs[2]
-    node.dynamic_switch_distance = float(dynamic.get('switch_distance', 1.5))
-    node.dynamic_switch_check_period = float(dynamic.get('switch_check_period', 0.05))
-    align = node.mode_configs[3].get('pre_align', {})
-    for name, default in {'enabled': True, 'distance': 0.5, 'release_xy_tolerance': 0.1,
-                          'release_yaw_tolerance': 0.15, 'near_adjust_timeout': 0.5}.items():
-        value = align.get(name, default)
-        if name == 'enabled':
-            if type(value) is not bool:
-                raise ValueError('pre_align.enabled 必须为布尔值')
-        elif type(value) not in (float, int) or not math.isfinite(value) or value < 0:
-            raise ValueError(f'pre_align.{name} 必须为非负有限数值')
-        setattr(node, 'pre_align_' + name, value)
     for name, value in load_special_parameters(node=node).items():
         setattr(node, name, value)
     from ament_index_python.packages import get_package_share_directory

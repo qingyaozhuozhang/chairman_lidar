@@ -9,7 +9,7 @@ import unicodedata
 
 
 def show_menu(points, tasks, modes, output=print):
-    output('\nchairman_navigation 功能菜单')
+    output('\nchairman_lidar 功能菜单')
     output('定点导航：')
     for number, point in points.items():
         if number not in tasks:

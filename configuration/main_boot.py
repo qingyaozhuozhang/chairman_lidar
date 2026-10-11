@@ -66,7 +66,7 @@ def find_workspace(explicit=None):
                 return path.resolve()
         if explicit:
             break
-    raise ValueError('找不到工作空间，请使用 --workspace 指定 chairman_navigation 目录')
+    raise ValueError('找不到工作空间，请使用 --workspace 指定 chairman_lidar 目录')
 
 
 def build_commands(root, selected_pose, no_micro=False, no_sum=False, headless=False):

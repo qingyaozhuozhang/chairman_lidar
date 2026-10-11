@@ -206,7 +206,7 @@ class CommunicationNode(Node):
             self.get_logger().debug(reason)
 
     def publish_manual_zero_speed(self, reason: str = ""):
-        """清空滤波状态并发布零速度，用于手写运动收尾。"""
+        """清空滤波状态并发布零速度，用于特殊运动收尾。"""
         self.reset_filter_state()
         self.publish_zero_speed(reason)
 
@@ -229,7 +229,7 @@ class CommunicationNode(Node):
             self.get_logger().debug("🛑 Nav2速度转发已关闭，后续旧 /cmd_vel 将被忽略")
 
     def cmd_callback(self, msg):
-        """接收 Nav2 速度观测；仅在导航转发启用且手写控制未接管时处理。"""
+        """接收 Nav2 速度观测；仅在导航转发启用且特殊运动控制未接管时处理。"""
         if self.manual_control_active or self.in_stair_mode:
             return
 

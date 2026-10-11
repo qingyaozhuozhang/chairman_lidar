@@ -3,7 +3,6 @@
 # 其余字段通过参数服务临时赋值，任务结束恢复运行前的值。
 id: 3
 name: speed_3
-base_mode: 3
 pre_align:
   enabled: true
   distance: 0.5  # 提前点距最终目标的距离，m

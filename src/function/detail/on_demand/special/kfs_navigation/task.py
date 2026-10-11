@@ -6,7 +6,7 @@ from chairman_tasks.fixed_point import task as navigation
 
 def run(ctx, request):
     mode = int(ctx.config.get('mode', ctx.point_mode(request.target)))
-    return ctx.navigation(mode, lambda base: navigate(ctx.node, request.kfs_offset, speed_profile=base))
+    return ctx.navigation(mode, lambda selected: navigate(ctx.node, request.kfs_offset, speed_profile=selected))
 
 
 def navigate(node, kfs_offset, speed_profile=1):

@@ -9,7 +9,6 @@ from action_msgs.msg import GoalStatus
 from nav2_msgs.action import NavigateToPose
 from rclpy.parameter import Parameter
 
-from chairman_tasks.config import dynamic_parameters
 from chairman_tasks.special import motion
 
 
@@ -17,24 +16,26 @@ def run(ctx, request):
     return ctx.go_to_point(request.target)
 
 
-def navigate_pre_align(node, x, y, qz, qw, desc, timeout_sec=None):
-    """执行模式 3：提前对齐朝向，再导航至最终目标。
+def navigate_pre_align(node, x, y, qz, qw, desc, timeout_sec=None, speed_profile=3):
+    """按所选模式的 pre_align 配置提前对齐朝向，再导航至最终目标。
 
-    距离大于 pre_align_distance 时，第一段目标位于当前位置至目标的连线上，
-    距最终目标 pre_align_distance 米；否则先在当前位置调整朝向。
+    距离大于 pre_align.distance 时，第一段目标位于当前位置至目标的连线上，
+    距最终目标 pre_align.distance 米；否则先在当前位置调整朝向。
     第一段使用最终目标姿态，按位置、朝向容差及近点调整时限放行。"""
-    if not node.pre_align_enabled:
+    selected = profile_key(node, speed_profile)
+    align = node.mode_configs[selected].get('pre_align', {})
+    if not align.get('enabled', False):
         return navigate(node,
-            x, y, qz, qw, desc, timeout_sec=timeout_sec, speed_profile=3
+            x, y, qz, qw, desc, timeout_sec=timeout_sec, speed_profile=selected
         )
 
     pose = node.get_current_map_pose(timeout_sec=0.20, log_error=False)
     if pose is None:
         node.task_progress.update(
-            f"⚠️ 模式3提前转正：无法获取当前 map 位姿，直接导航到真实目标点：{desc}"
+            f"⚠️ 模式{selected}提前转正：无法获取当前 map 位姿，直接导航到真实目标点：{desc}"
         )
         return navigate(node,
-            x, y, qz, qw, desc, timeout_sec=timeout_sec, speed_profile=3
+            x, y, qz, qw, desc, timeout_sec=timeout_sec, speed_profile=selected
         )
 
     current_x, current_y, _ = pose
@@ -44,15 +45,15 @@ def navigate_pre_align(node, x, y, qz, qw, desc, timeout_sec=None):
     dy = target_y - current_y
     distance = math.hypot(dx, dy)
 
-    align_distance = max(0.0, float(node.pre_align_distance))
+    align_distance = float(align['distance'])
 
     if align_distance <= 1e-6:
         node.task_progress.update(
-            f"⚠️ pre_align_distance={align_distance:.3f} 无效，"
-            f"模式3直接导航到真实目标点：{desc}"
+            f"⚠️ pre_align.distance={align_distance:.3f}，"
+            f"模式{selected}直接导航到真实目标点：{desc}"
         )
         return navigate(node,
-            x, y, qz, qw, desc, timeout_sec=timeout_sec, speed_profile=3
+            x, y, qz, qw, desc, timeout_sec=timeout_sec, speed_profile=selected
         )
 
     # 距离在配置阈值以内：不再生成提前点，直接原地先转正。
@@ -62,7 +63,8 @@ def navigate_pre_align(node, x, y, qz, qw, desc, timeout_sec=None):
             current_y,
             qz,
             qw,
-            f"{desc}（原地）"
+            f"{desc}（原地）",
+            speed_profile=selected,
         )
 
         if not turn_ok:
@@ -76,10 +78,10 @@ def navigate_pre_align(node, x, y, qz, qw, desc, timeout_sec=None):
             y,
             qz,
             qw,
-            f"{desc}-模式3转正后进点",
+            f"{desc}-模式{selected}转正后进点",
             timeout_sec=timeout_sec,
-            speed_profile=3,
-            stage_name=f'模式3 2/2 进入真实目标【{desc}】'
+            speed_profile=selected,
+            stage_name=f'模式{selected} 2/2 进入真实目标【{desc}】'
         )
 
     # 距离在配置阈值以外：先到提前点，并使用最终目标姿态。
@@ -93,7 +95,8 @@ def navigate_pre_align(node, x, y, qz, qw, desc, timeout_sec=None):
         pre_y,
         qz,
         qw,
-        f"{desc}（提前点）"
+        f"{desc}（提前点）",
+        speed_profile=selected,
     )
 
     if not first_ok:
@@ -107,10 +110,10 @@ def navigate_pre_align(node, x, y, qz, qw, desc, timeout_sec=None):
         y,
         qz,
         qw,
-        f"{desc}-模式3转正后进点",
+        f"{desc}-模式{selected}转正后进点",
         timeout_sec=timeout_sec,
-        speed_profile=3,
-        stage_name=f'模式3 2/2 进入真实目标【{desc}】'
+        speed_profile=selected,
+        stage_name=f'模式{selected} 2/2 进入真实目标【{desc}】'
     )
 
 
@@ -119,14 +122,13 @@ def navigate(node, x, y, qz, qw, desc, timeout_sec=None, speed_profile=1,
     """发送地图目标并等待 Nav2 结果；进入和退出时显式控制速度转发。"""
     actual_speed_profile = initial_profile(node, speed_profile, x, y, desc)
     if stage_name is None:
-        if actual_speed_profile == '2_sprint':
-            phase = '模式2 冲刺'
-        elif actual_speed_profile == 2:
-            phase = '模式2 精调'
-        elif actual_speed_profile == 3:
-            phase = '模式3 直接导航'
+        selected = profile_key(node, speed_profile)
+        if actual_speed_profile == f'{selected}_sprint':
+            phase = f'模式{selected} 冲刺'
+        elif 'sprint_parameters' in node.mode_configs[selected]:
+            phase = f'模式{selected} 精调'
         else:
-            phase = '模式1 基础导航'
+            phase = f'模式{selected} 直接导航'
         stage_name = f'{phase}【{desc}】'
     node.task_progress.stage(stage_name, '准备参数，等待 Nav2 接受目标')
     apply_profile(node, actual_speed_profile)
@@ -239,13 +241,14 @@ def navigate(node, x, y, qz, qw, desc, timeout_sec=None, speed_profile=1,
         node.task_progress.end_stage(stage_result)
 
 
-def navigate_alignment(node, x, y, qz, qw, desc):
-    """执行模式 3 的第一段，达到位置容差后检查朝向和近点调整时限。
+def navigate_alignment(node, x, y, qz, qw, desc, speed_profile=3):
+    """执行提前对齐的第一段，达到位置容差后检查朝向和近点调整时限。
 
     朝向满足容差或调整超时后允许放行；发送第二段前须确认第一段 Action 终止。"""
-    node.task_progress.stage(f'模式3 1/2 提前转正【{desc}】', '准备参数，等待 Nav2 接受目标')
-    actual_speed_profile = initial_profile(node, 3, x, y, desc)
-    apply_profile(node, actual_speed_profile)
+    selected = profile_key(node, speed_profile)
+    align = node.mode_configs[selected]['pre_align']
+    node.task_progress.stage(f'模式{selected} 1/2 提前转正【{desc}】', '准备参数，等待 Nav2 接受目标')
+    apply_profile(node, selected)
     node.dynamic_last_check_time = None
 
     node._nav_client.wait_for_server()
@@ -262,9 +265,9 @@ def navigate_alignment(node, x, y, qz, qw, desc):
     target_y = float(y)
     target_yaw = yaw_from_qz_qw(node, qz, qw)
 
-    release_xy = max(0.0, float(node.pre_align_release_xy_tolerance))
-    release_yaw = max(0.0, float(node.pre_align_release_yaw_tolerance))
-    near_adjust_timeout = max(0.0, float(node.pre_align_near_adjust_timeout))
+    release_xy = float(align['release_xy_tolerance'])
+    release_yaw = float(align['release_yaw_tolerance'])
+    near_adjust_timeout = float(align['near_adjust_timeout'])
 
     node.current_nav_goal_handle = None
     tracker_started = False
@@ -352,7 +355,7 @@ def navigate_alignment(node, x, y, qz, qw, desc):
     finally:
         try:
             if tracker_started or node.nav_cmd_tracking_enabled:
-                node.stop_nav_cmd_tracking(f'🛑 模式3第一段结束/放行：{desc}，显式停止底盘')
+                node.stop_nav_cmd_tracking(f'🛑 模式{selected}第一段结束/放行：{desc}，显式停止底盘')
             # 取消响应不代表动作终止；须等待第一段最终结果后才能发送第二段。
             # 超时保留 pending 并抛出异常，由调度层继续收尾。
             if node._nav_client.pending:
@@ -367,39 +370,40 @@ def navigate_alignment(node, x, y, qz, qw, desc):
 
 
 def initial_profile(node, speed_profile, target_x, target_y, desc):
-    """导航开始前选择实际应用的 Nav2 档位。模式 2 会根据起点距离决定冲刺/精调。"""
+    """所选模式包含冲刺参数时，按本文件的切换距离选择冲刺或精调。"""
     selected = profile_key(node, speed_profile)
-
-    if selected != 2:
+    config = node.mode_configs[selected]
+    if 'sprint_parameters' not in config:
         return selected
 
     distance = distance_to_goal(node, target_x, target_y, timeout_sec=0.05)
-    if distance is not None and distance <= node.dynamic_switch_distance:
-        return 2
+    if distance is not None and distance <= config['switch_distance']:
+        return selected
 
     if distance is None:
         node.task_progress.update(
-            f'[模式2] 暂时无法获取 map 位姿，先使用冲刺档；'
-            f'位姿恢复后按 {node.dynamic_switch_distance:.2f}m 阈值切换精调'
+            f'[模式{selected}] 暂时无法获取 map 位姿，先使用冲刺档；'
+            f'位姿恢复后按 {config["switch_distance"]:.2f}m 阈值切换精调'
         )
 
-    return node.dynamic_sprint_key
+    return f'{selected}_sprint'
 
 
 def update_dynamic_profile(node, requested_speed_profile, target_x, target_y, desc):
-    """模式 2 进入切换距离后应用精调参数，后续不再切回冲刺。"""
+    """进入当前模式的切换距离后应用精调参数，后续不再切回冲刺。"""
     requested_key = profile_key(node, requested_speed_profile)
-    if requested_key != 2:
+    config = node.mode_configs[requested_key]
+    if 'sprint_parameters' not in config:
         return
 
     # 已经切到精调档后不再切回冲刺，避免阈值附近来回切换。
-    if node.current_profile == 2:
+    if node.current_profile == requested_key:
         return
 
     now = node.get_clock().now()
     if node.dynamic_last_check_time is not None:
         elapsed = (now - node.dynamic_last_check_time).nanoseconds / 1e9
-        if elapsed < node.dynamic_switch_check_period:
+        if elapsed < config['switch_check_period']:
             return
     node.dynamic_last_check_time = now
 
@@ -407,23 +411,22 @@ def update_dynamic_profile(node, requested_speed_profile, target_x, target_y, de
     if distance is None:
         return
 
-    if distance <= node.dynamic_switch_distance:
+    if distance <= config['switch_distance']:
         node.task_progress.update('已进入精调距离，正在切换速度参数')
-        apply_profile(node, 2)
+        apply_profile(node, requested_key)
         node.task_progress.end_stage(
-            f'距目标 {distance:.3f}m <= {node.dynamic_switch_distance:.3f}m，精调参数已生效')
-        node.task_progress.stage(f'模式2 精调【{desc}】', '继续当前 Nav2 目标，进行到点精调')
+            f'距目标 {distance:.3f}m <= {config["switch_distance"]:.3f}m，精调参数已生效')
+        node.task_progress.stage(f'模式{requested_key} 精调【{desc}】', '继续当前 Nav2 目标，进行到点精调')
 
 
 def begin_parameters(node, mode):
     mode = profile_key(node, mode)
     if mode not in node.mode_configs:
         raise ValueError(f'未定义速度模式 {mode}')
-    base = node.mode_configs[mode]['base_mode']
-    keys = (2, '2_sprint') if base == 2 else (base,)
+    keys = (mode, f'{mode}_sprint') if 'sprint_parameters' in node.mode_configs[mode] else (mode,)
     names = {}
     for key in keys:
-        for remote, values in profile_values(node, key, mode).items():
+        for remote, values in node.speed_profiles[key].items():
             names.setdefault(remote, set()).update(values)
     node.parameter_transaction.begin(names)
     node.active_mode = mode
@@ -434,6 +437,8 @@ def apply_profile(node, speed_profile):
     key = profile_key(node, speed_profile)
     if key not in node.speed_profiles:
         raise ValueError(f'未配置模式 {key}')
+    if key not in (node.active_mode, f'{node.active_mode}_sprint'):
+        raise ValueError(f'模式 {key} 不属于当前导航片段')
     if node.current_profile == key:
         return True
     # 参数拒绝时抛出异常，由调度层恢复已修改的节点。
@@ -449,21 +454,11 @@ def restore_parameters(node):
     node.active_mode = None
 
 
-def profile_values(node, key, mode_id=None):
-    requested = node.active_mode if mode_id is None else mode_id
-    if requested is None:
-        requested = 2 if key == '2_sprint' else key
-    base = node.mode_configs[requested]['base_mode']
-    section = 'sprint_parameters' if key == '2_sprint' else 'parameters'
-    values = {}
-    for mode in dict.fromkeys((base, requested)):
-        config = node.mode_configs[mode]
-        sections = ('parameters', section) if mode != base and section == 'sprint_parameters' else (section,)
-        for selected in sections:
-            for remote, parameters in dynamic_parameters(config.get(selected, {})).items():
-                values.setdefault(remote, {}).update(parameters)
+def profile_values(node, key):
+    """只转换当前参数组，不合并其他模式或阶段的配置。"""
     return {remote: {name: Parameter(name, value=value).get_parameter_value()
-                     for name, value in parameters.items()} for remote, parameters in values.items()}
+                     for name, value in parameters.items()}
+            for remote, parameters in node.speed_profiles[key].items()}
 
 
 def distance_to_goal(node, target_x, target_y, timeout_sec=0.02):

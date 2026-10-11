@@ -89,9 +89,9 @@ def test_point_write_preserves_format_orientation_metadata_and_other_team(tmp_pa
     original = ('# header\nred:\n  1:\n    name: "点位 # 1"\n' + pose_text
                 + '    mode: 3\nblue:\n  1: {name: 蓝方, pose: [0, 0, 0, 1], mode: 2}\n')
     path.write_text(original)
-    backup = point.update_point_xy(path, 'red', 1, 3.1234, -4.5678)
+    point.update_point_xy(path, 'red', 1, 3.1234, -4.5678)
     assert path.read_text() == original.replace('-1.000', '3.123').replace('2.000', '-4.568')
-    assert backup.read_text() == original
+    assert list(tmp_path.iterdir()) == [path]
 
 
 def test_real_project_points_and_regions_change_only_selected_coordinates(tmp_path):
@@ -185,9 +185,7 @@ def test_menu_updates_both_sources_and_leaves_install_untouched(tmp_path, monkey
             expected['red'][14]['pose'][:2] = [1.25, -1.25]
         assert yaml.safe_load(path.read_text()) == expected
         assert path.read_text().splitlines()[:2] == before[path].splitlines()[:2]
-        backups = list((path.parent / '.point_backups').glob('*.bak'))
-        assert len(backups) == 1
-        assert backups[0].read_text() == before[path]
+        assert not (path.parent / '.point_backups').exists()
     for path in installed:
         assert path.read_text() == before[path]
     assert not list((tmp_path / 'install').rglob('.point_backups'))
@@ -223,6 +221,7 @@ def test_second_source_write_failure_restores_first_source(tmp_path, monkeypatch
     assert failed
     assert '本次标定未完成' in capsys.readouterr().out
     assert all(path.read_bytes() == original for path, original in before.items())
+    assert not list(tmp_path.rglob('.point_backups'))
 
 
 def test_unchanged_central_point_still_updates_source_copy(tmp_path, monkeypatch):

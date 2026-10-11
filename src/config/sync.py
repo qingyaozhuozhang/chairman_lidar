@@ -14,7 +14,7 @@ def workspace_root():
         for parent in (candidate, *candidate.parents):
             if (parent / 'src/config/manifest.json').is_file() and (parent / 'tool/package.xml').is_file():
                 return parent.resolve()
-    raise ValueError('找不到 chairman_navigation 源码工作空间；请在工程内执行并 source install/setup.bash')
+    raise ValueError('找不到 chairman_lidar 源码工作空间；请在工程内执行并 source install/setup.bash')
 
 
 def confined(root, relative):

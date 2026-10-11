@@ -1,10 +1,10 @@
-# 特殊任务的本地手写控制参数；不向运行中的 Nav2 下发。
+# 特殊任务的本地特殊运动控制参数；不向运行中的 Nav2 下发。
 # parameters：普通定距移动、旋转、登阶；uphill_parameters：沿地图 X 方向上坡。
 # 两组都完整保留 controller_server / velocity_smoother 的 Nav2 名称和层级。
-# 标记“对照项”的字段仅供对照 Nav2 结构，本手写控制器不读取；其余字段实际生效。
+# 标记“对照项”的字段仅供对照 Nav2 结构，本特殊运动控制器不读取；其余字段实际生效。
 # min_approach_* 是接近目标时的最小速度幅值，不能用负向速度下限 v_*_min 替代。
-# max_decel 按 Nav2 约定填写负值；手写控制内部使用其幅值计算制动。
-# controller_frequency 决定阻塞式手写循环周期；登阶定时器由通信节点按 50 Hz 调度。
+# max_decel 按 Nav2 约定填写负值；特殊运动控制内部使用其幅值计算制动。
+# controller_frequency 决定阻塞式特殊运动控制循环周期；登阶定时器由通信节点按 50 Hz 调度。
 # 同步配置后重启 Function sum 生效。
 
 # 普通移动 / 旋转 / 登阶

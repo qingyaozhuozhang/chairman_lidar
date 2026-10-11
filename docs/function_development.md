@@ -7,7 +7,7 @@
 ```text
 src/function/
 ├── framework/                            # ROS 包 framework：进程入口与公共通信
-│   ├── sum.py                            # 菜单、状态条、信号处理与退出
+│   ├── sum.py                            # 功能菜单、信号处理
 │   └── core/
 │       ├── communication.py              # 话题、服务、TF 和底盘速度输出
 │       ├── actions.py                    # Nav2 目标发送、取消、终态确认
@@ -16,11 +16,11 @@ src/function/
 │   ├── on_demand/                        # Python 包 chairman_tasks
 │   │   ├── task.py                       # TaskServer、dispatch、TaskContext
 │   │   ├── config.py                     # 配置加载、名称展开与有效性校验
-│   │   ├── fixed_point/task.py           # 三种定点导航流程及参数应用
+│   │   ├── fixed_point/task.py           # 三种速度模式导航流程及参数应用
 │   │   └── special/
 │   │       ├── motion.py                 # 角度、坐标转换和速度限制计算
-│   │       ├── move_forward/task.py      # 定距移动闭环控制
-│   │       ├── turn_left/task.py         # 有符号角度的旋转控制
+│   │       ├── move_forward/task.py      # 沿自身坐标系往前直走控制
+│   │       ├── turn_left/task.py         # 原地左转控制
 │   │       ├── stair_forward/task.py     # 登阶周期控制与停止信号处理
 │   │       ├── align_region/task.py      # 当前区域中心目标计算
 │   │       ├── uphill/task.py            # 沿地图 X 方向上坡
@@ -39,10 +39,10 @@ src/function/
         ├── speed_1.yaml                  # 基础导航
         ├── speed_2.yaml                  # 冲刺与精调
         ├── speed_3.yaml                  # 提前对齐
-        └── special.yaml                  # 手写运动与检测参数
+        └── special.yaml                  # 特殊运动与检测参数
 ```
 
-日常配置编辑入口为 `src/config/framework/on_demand/`；`sync` 将其同步至上图中的包内配置和已有安装副本。具体功能代码位于 `detail`，`framework/core` 只保留公共 ROS 通信服务。
+日常配置编辑入口为 `src/config/framework/on_demand/`；`sync` 将其同步至上图中的包内配置和已有安装副本。具体功能代码算法内容位于 `detail`，`framework/core` 为公共 ROS 通信服务。
 
 建议按一次请求的执行顺序阅读代码：
 
@@ -51,12 +51,12 @@ src/function/
 | 1 | `framework/sum.py: main()`、`menu_loop()` | 启动 ROS 执行器，读取编号并提交服务请求 |
 | 2 | `detail/on_demand/task.py: TaskServer.srv_callback()` | 获取任务锁，记录开始状态，执行任务并统一收尾 |
 | 3 | 同文件的 `dispatch()` | 从登记模块导入 `run(ctx, request)`；普通点位使用 `fixed_point.task` |
-| 4 | 具体功能的 `run()` | 读取任务参数，执行导航或手写控制，返回布尔结果 |
+| 4 | 具体功能的 `run()` | 读取任务参数，执行导航或特殊运动控制，返回布尔结果 |
 | 5 | `TaskServer.restore_parameters()` | 确认 Action 结束，恢复临时参数并读回校验 |
 
 `TaskContext` 与调度代码在同一个 `task.py` 中，提供组合任务接口。右移和 KFS 移动复用 `move_forward`；三个旋转入口复用 `turn_left`；三个登阶入口复用 `stair_forward`。修改这些共享控制函数会影响对应的全部调用者。
 
-持续功能通过订阅和定时器独立运行。登阶属于按需任务：一次调用后持续运动，收到停止信号或中止请求时返回结果。
+持续调用功能通过订阅和定时器独立运行。例如：登阶属于按需任务（一次调用后持续运动，收到停止信号或中止请求时返回结果）
 
 ## 2. sum.py 怎么用
 
@@ -87,7 +87,7 @@ SELECTED_POSE=4 ros2 run framework sum
 | 输入方式 | 说明 |
 |---|---|
 | 不加命令行参数 | 启动交互菜单 |
-| `--ros-args ...` | ROS 标准启动参数，例如 `-p controller_server.FollowPath.v_linear_max:=0.3`，仅覆盖本进程手写控制参数 |
+| `--ros-args ...` | ROS 标准启动参数，例如 `-p controller_server.FollowPath.v_linear_max:=0.3`，仅覆盖本进程特殊运动控制参数 |
 | 菜单输入整数 | 执行该编号对应的任务 |
 | 菜单输入 `m` | 显示完整菜单 |
 | 偏置提示后输入 `x y z` | 设置本次 KFS 请求的偏置，单位 m |
@@ -101,7 +101,7 @@ SELECTED_POSE=4 ros2 run framework sum
 以下为红方菜单节选，实际条目由 `points.yaml` 和 `functions.yaml` 生成：
 
 ```text
-chairman_navigation 功能菜单
+chairman_lidar 功能菜单
 定点导航：
     0: 原点（模式 3：speed_3）
     1: 矛头1（模式 3：speed_3）
@@ -140,7 +140,7 @@ chairman_navigation 功能菜单
 [   ===      ] 模式3 2/2 进入真实目标【矛头1】 | 等待 Nav2 执行结果 | 2.0s
 [任务完成] 编号 1：矛头1（模式 3） | 结束位置：模式3 2/2 进入真实目标【矛头1】 | 执行成功；动作已结束，已发送零速度，临时参数已恢复 | 用时 …s
 
-chairman_navigation 功能菜单
+chairman_lidar 功能菜单
 定点导航：
     ...
 特殊功能：
@@ -172,7 +172,7 @@ KFS 平面运动使用车体坐标系中的 x/y，接口保留 z 字段。登阶
 | `/nav_topic` | `std_msgs/msg/Int8` | 登阶任务收到 0 后停止 |
 | `/nav_speed_heading_data` | `custom_msg/msg/SpeedHeading` | 底盘输出：`linear_x`、`linear_y` 为 m/s，`angular_z` 为 rad/s |
 
-服务与菜单调用同一调度逻辑。同一时刻只执行一个请求，忙碌时新请求返回失败。Nav2 的 `/cmd_vel` 只在导航转发启用时处理；手写运动接管速度输出，结束时直接发送零速度。
+服务与菜单调用同一调度逻辑。同一时刻只执行一个请求，忙碌时新请求返回失败。Nav2 的 `/cmd_vel` 只在导航转发启用时处理；特殊运动接管速度输出，结束时直接发送零速度。
 
 ## 3. 增加一个普通固定点
 
@@ -195,22 +195,38 @@ ros2 run chairman_config sync --files framework/on_demand/points.yaml
 
 `pose` 是地图坐标系中的 `[x, y, qz, qw]`，位置单位 m，朝向为平面四元数；`mode` 必须引用已定义模式。编号范围为 0～127，15/16 已用于动态目标。普通点无需新增 Python 文件或登记 `functions.yaml`，由定点导航入口统一处理。
 
-实车采集使用 `ros2 run tool point`，具体采样和保存规则见 [README 的工具说明](../README.md#实车快速标定点位)。
+实车采集点位使用 `ros2 run tool point`，具体采样和保存规则见 [README 的工具说明](../README.md#实车快速标定点位)。
 
 ## 4. 增加新的速度模式
 
-已有模式使用 `speed_1.yaml`、`speed_2.yaml`、`speed_3.yaml`。修改已有字段见[内置速度模式](parameter_modification.md#33-改内置速度模式)。增加参数组合时，从完整模板创建中央文件和包内副本：
+每个速度模式独立配置 Nav2 参数及导航流程。点位的 `mode` 对应模式文件中的 `id`，`name` 用于菜单显示。已有模式使用 `speed_1.yaml`、`speed_2.yaml`、`speed_3.yaml`，字段含义见[内置速度模式](parameter_modification.md#33-改内置速度模式)。
 
-```bash
-cp docs/templates/speed_mode.yaml src/config/framework/on_demand/modes/precise.yaml
+以新增 `speed_4.yaml` 为例，修改文件链如下：
+
+```text
+src/config/framework/on_demand/modes/speed_4.yaml
+    │ 定义编号、名称和完整参数块
+    ↓ 创建包内副本
+src/function/config/on_demand/modes/speed_4.yaml
+    ↓ 登记两份文件的同步映射
+src/config/manifest.json
+    ↓ 将需要使用此模式的点位设为 mode: 4
+src/config/framework/on_demand/points.yaml
+    ↓ 同步点位、构建 framework、重启 Function sum
+按 speed_4.yaml 的配置执行导航
 ```
 
-编辑新文件的 `id`、`name`、`base_mode` 及所需值。以下仅展示需要修改的字段，其余参数保留模板中的完整节点块：
+从完整模板创建普通导航模式：
+
+```bash
+cp docs/templates/speed_mode.yaml src/config/framework/on_demand/modes/speed_4.yaml
+```
+
+设置唯一的 `id`、显示名称 `name`，并修改本文件中的参数值。以下只展示编辑位置；实际文件应保留模板中完整的 `controller_server` 和 `velocity_smoother` 参数块，节点名称、`ros__parameters` 层级及字段格式与 `nav2_params.yaml` 一致：
 
 ```yaml
 id: 4
-name: precise
-base_mode: 1
+name: speed_4
 parameters:
   controller_server:
     ros__parameters:
@@ -227,24 +243,26 @@ parameters:
 编辑完成后创建包内文件：
 
 ```bash
-cp src/config/framework/on_demand/modes/precise.yaml src/function/config/on_demand/modes/precise.yaml
+cp src/config/framework/on_demand/modes/speed_4.yaml src/function/config/on_demand/modes/speed_4.yaml
 ```
 
 在 `src/config/manifest.json` 中追加映射，注意保留相邻条目间的逗号：
 
 ```json
-"framework/on_demand/modes/precise.yaml": "src/function/config/on_demand/modes/precise.yaml"
+"framework/on_demand/modes/speed_4.yaml": "src/function/config/on_demand/modes/speed_4.yaml"
 ```
 
-模式编号使用未占用的 4 及以上整数。`base_mode` 选择执行流程，三种实现均位于 `detail/on_demand/fixed_point/task.py`：
+模式编号使用未占用的 4 及以上整数。程序根据当前文件中的配置选择流程，编号只用于引用。可按所需流程选择复制来源：
 
-| base_mode | 流程 | 主要函数 |
+| 复制来源 | 本文件需要保留的配置 | 执行流程 |
 |---|---|---|
-| 1 | 基础导航 | `navigate()` |
-| 2 | 冲刺与精调 | `navigate()`、`initial_profile()`、`update_dynamic_profile()` |
-| 3 | 提前对齐后进入目标 | `navigate_pre_align()`、`navigate_alignment()` |
+| `speed_1.yaml` 或速度模式模板 | `parameters` | 直接导航 |
+| `speed_2.yaml` | `parameters`、`sprint_parameters`、`switch_distance`、`switch_check_period` | 按本模式的距离阈值从冲刺切换到精调 |
+| `speed_3.yaml` | `parameters`、`pre_align` | 按本模式的提前距离及放行条件完成两段导航 |
 
-新增模式的 `parameters` 覆盖基础模式同名运行参数，缺省字段继承基础模式。继承模式 2 时，该组覆盖也用于冲刺阶段；需要独立冲刺值时，复制 `speed_2.yaml` 的完整 `sprint_parameters` 并修改。切换距离和提前对齐规则由内置 2/3 号文件配置，新增模式用于组合参数，不定义新的导航算法。
+复制后修改编号、名称和参数，新文件与来源文件互相独立。例如从 `speed_3.yaml` 创建编号 4 后，该模式的提前距离只读取 `speed_4.yaml` 中的 `pre_align.distance`。冲刺与精调两组应完整列出相同的动态参数，分别填写各阶段的值；冲刺精调与提前对齐应配置为不同模式。
+
+新增已有 Nav2 参数时，在本文件对应的节点块中按原名填写；参数必须已由远端节点声明并支持动态更新。未列出的字段保持运行中的值。新增控制算法或远端尚未声明的字段，需要同时实现对应 Python 流程或 Nav2 插件逻辑。
 
 把目标点的 `mode` 改为 4，同步点位，再构建并重启功能进程：
 
@@ -254,7 +272,7 @@ colcon build --packages-select framework
 source install/setup.bash
 ```
 
-任务开始前读取将被修改的运行值，结束后恢复并读回确认；磁盘 `nav2_params.yaml` 保留启动基准。标记“启动项”的字段不参与任务期间的动态修改，详见[参数生命周期](parameter_modification.md#34-新模式的临时-nav2-参数)。
+任务开始前读取将被修改的运行值，临时应用所选文件的参数，结束后恢复并读回确认；磁盘 `nav2_params.yaml` 保留启动基准。标记“启动项”的字段不参与任务期间的动态修改，详见[参数生命周期](parameter_modification.md#34-新增跑定点模式参数)。
 
 ## 5. 增加特殊功能
 
@@ -302,11 +320,11 @@ colcon build --packages-select framework
 source install/setup.bash
 ```
 
-`description` 用于菜单，应与任务行为一致。`module` 从 `on_demand/` 下的模块路径开始写，不带 `.py` 后缀。编号必须唯一且在 -128～127 内；普通特殊任务建议使用空闲负数。
+`description` 用于在功能菜单中显示功能说明。`module` 从 `on_demand/` 下的模块路径开始写，不带 `.py` 后缀。编号必须唯一且在 -128～127 内；普通特殊任务建议使用空闲负数。
 
 需要偏置输入时增加 `uses_offset: true`，由 `request.kfs_offset` 读取。`uses_point: true` 用于关联动态点位，该编号须在红蓝点位中同时登记。普通特殊任务不需要此字段。
 
-入口必须返回 `True` 或 `False`。组合任务检查每一步结果，前一步失败或中止时立即返回；多点序列可参考 `docs/templates/point_sequence/task.py`。常规过程信息使用 `ctx.node.task_progress.update()` 更新状态条，错误原因使用 `fail()` 记录，任务边界由调度层统一输出。
+入口必须返回 `True` 或 `False`。组合任务检查每一步结果，前一步失败或中止时立即返回；常规过程信息使用 `ctx.node.task_progress.update()` 更新状态条，错误原因使用 `fail()` 记录，任务边界由调度层统一输出。
 
 ### 5.2 自己写闭环算法
 
@@ -320,7 +338,7 @@ def run(ctx, request):
 
 `rotate()` 是本文件中的控制实现；在 `functions.yaml` 登记 `module: special.my_turn.task` 后按上一节构建。新任务无需修改菜单或调度代码。
 
-控制循环应明确坐标系、结束容差与超时，持续检查 `node.cancel_current_task`。`ctx.manual()` 管理手写速度通道及退出清零；`ctx.navigation(mode, callback)` 管理导航片段的参数应用、Action 结束确认与恢复。已有高层接口内部包含这些处理，不应重复嵌套同一动作的生命周期。
+控制循环应明确坐标系、结束容差与超时，持续检查 `node.cancel_current_task`。`ctx.manual()` 管理特殊运动速度通道及退出清零；`ctx.navigation(mode, callback)` 管理导航片段的参数应用、Action 结束确认与恢复。已有高层接口内部包含这些处理，不应重复嵌套同一动作的生命周期。
 
 组合接口位于 **`src/function/detail/on_demand/task.py`** 的 `TaskContext`：
 
@@ -342,7 +360,7 @@ def run(ctx, request):
 | `ctx.wait(seconds)` | 可响应中止的等待 |
 | `ctx.log(text)` | 输出低频信息日志；连续进度使用状态条 |
 
-普通移动使用 `/Odometry` 的位置与航向；区域、上坡和导航目标使用 TF 的 `map → base_footprint`；抬升检测使用 `/odom_map.z`。读取或发布数据时，应保持这些坐标系和单位一致。
+普通移动使用 `/Odometry` 的位置与航向；抬升检测使用 `/odom_map.z`。读取或发布数据时，应保持这些坐标系和单位一致。
 
 每个导航片段返回前均确认动作停止并恢复参数，下一步只在返回成功后执行。恢复异常应交由调度层处理，不能捕获后继续运动。
 

@@ -1,6 +1,6 @@
 # Livox ROS Driver 2
 
-> 在 `chairman_navigation` 工程中，先加载 ROS2 环境，再从工程根目录执行 `colcon build` 即可。CMake 会自动选择可用的 ROS2 消息接口 API，无需运行下方上游说明中的 `./build.sh humble`。该旧脚本按另一种目录布局清理生成目录并切换 ROS1/ROS2 清单，本工程已使用 ROS2 清单。Livox SDK2 仍需预先安装。
+> 在 `chairman_lidar` 工程中，先加载 ROS2 环境，再从工程根目录执行 `colcon build` 即可。CMake 会自动选择可用的 ROS2 消息接口 API，无需运行下方上游说明中的 `./build.sh humble`。该旧脚本按另一种目录布局清理生成目录并切换 ROS1/ROS2 清单，本工程已使用 ROS2 清单。Livox SDK2 仍需预先安装。
 
 Livox ROS Driver 2 is the 2nd-generation driver package used to connect LiDAR products produced by Livox, applicable for ROS (noetic recommended) and ROS2 (foxy or humble recommended).
 

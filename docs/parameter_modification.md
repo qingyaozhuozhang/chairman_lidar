@@ -1,40 +1,40 @@
 # 参数文件与配置修改
 
-本文路径相对于 `chairman_lidar/`，执行命令前先加载 `source install/setup.bash`。示例说明参数位置与修改方法，实际数值应依据地图、设备标定和控制要求设置。YAML 片段合并到已有节点或条目中，不重复创建同名键。
+本文路径相对于 `chairman_lidar/`，执行命令前先加载 `source install/setup.bash`。示例说明参数位置与修改方法，实际数值应依据地图、设备标定和控制要求设置。
 
 ## 1. 参数部分的文件框架
 
 ```text
-src/config/                              # 中央编辑入口，使用 sync 同步
+src/config/                              # 中央参数配置入口，使用 sync 同步
 ├── sync.py
 ├── manifest.json                        # 中央文件到源码目标的映射
 ├── framework/on_demand/
-│   ├── points.yaml                      # 红蓝点位、名称与模式
+│   ├── points.yaml                      # 红蓝区点位、名称与模式
 │   ├── functions.yaml                   # 特殊功能登记及任务参数
 │   └── modes/
 │       ├── speed_1.yaml                 # 基础导航
 │       ├── speed_2.yaml                 # 冲刺与精调
 │       ├── speed_3.yaml                 # 提前对齐
-│       └── special.yaml                 # 手写运动和检测参数
+│       └── special.yaml                 # 特殊运动和检测参数
 ├── fast_lio/                            # mid360.yaml 及其他雷达配置
 ├── fishbot_navigation2/
 │   ├── nav2_params.yaml                 # Nav2 启动基准
 │   └── rviz/*.rviz
 ├── livox_ros_driver2/                    # MID360 网络配置及其他型号配置
 └── odometry/
-    ├── initial_poses.yaml               # 四个场地的初始位姿
+    ├── initial_poses.yaml               # 四个启动位置的初始位姿
     └── regions.yaml                     # 红蓝区域边界
 src/function/
-├── config/on_demand/                    # 中央功能配置的包内副本
+├── config/on_demand/                    
 └── detail/continuous/
-    ├── micro_ros/config/boot.yaml        # 串口及 Agent 环境，本包直接管理
+    ├── micro_ros/config/boot.yaml        # 串口及 Agent 环境
     └── odometry/config/                 # 中央 odometry 配置的包内副本
 src/fishbot/fishbot_navigation2/
 ├── config/nav2_params.yaml              # 中央 Nav2 配置的包内副本
 ├── launch/navigation2.launch.py         # 节点关系、TF、地图及扫描设置
-├── maps/room.yaml                       # 二维地图描述
+├── maps/room.yaml                       # 栅格地图描述
 └── PCD/scans.pcd                        # 当前 launch 引用的点云地图
-configuration/main_boot.py               # 场地选择与启动编排
+configuration/main_boot.py               # 场地选择与启动入口
 ```
 
 配置按三个层次生效：中央文件用于编辑和同步；包内副本用于构建安装；节点启动时读取当前工作空间的安装配置。任务期间的运行参数还可由模式切换临时覆盖。
@@ -42,7 +42,7 @@ configuration/main_boot.py               # 场地选择与启动编排
 | 类型 | 编辑入口 | 生效方式 |
 |---|---|---|
 | 雷达、FAST-LIO、Nav2、odometry | `src/config/` 下对应目录 | `sync --files ...`，重启对应节点 |
-| 点位、功能登记、已有模式及手写控制 | `src/config/framework/on_demand/` | 同步相应文件，重启 Function sum |
+| 点位、功能登记、已有模式及特殊运动控制 | `src/config/framework/on_demand/` | 同步相应文件，重启 Function sum |
 | 新增模式文件或功能 Python 代码 | 中央/包内模式文件、`detail/on_demand/` | 登记映射或模块，构建 `framework` 并重启 |
 | micro-ROS 启动参数 | `src/function/detail/continuous/micro_ros/config/boot.yaml` | 构建 `micro_ros`，重启 Agent |
 | 导航 launch、地图、TF、扫描设置 | `src/fishbot/fishbot_navigation2/` | 构建 `fishbot_navigation2`，重启导航 |
@@ -92,17 +92,16 @@ ros2 run chairman_config sync --files fishbot_navigation2/nav2_params.yaml odome
 | `framework/on_demand/modes/speed_3.yaml` | `src/function/config/on_demand/modes/speed_3.yaml` |
 | `framework/on_demand/modes/special.yaml` | `src/function/config/on_demand/modes/special.yaml` |
 
-其他模式、雷达和 RViz 配置以清单为准。同步同时更新本工程已有的安装副本，兼容独立安装与合并安装。运行中的节点不会自动重新读取文件；同步后须重启相关进程。
 
 ## 3. 按需功能参数
 
-点位、任务、模式和手写控制的中央文件均可同步。以下示例更新模式 3：
+点位、任务、模式和特殊运动控制的中央文件均可同步。以下示例更新模式 3：
 
 ```bash
 ros2 run chairman_config sync --files framework/on_demand/modes/speed_3.yaml
 ```
 
-停止旧 Function sum，再由总启动或同场地终端重新启动。已有配置仅修改数值时无需重编译；新增 Python 模块或模式文件后执行：
+新增 Python 模块或模式文件后执行：
 
 ```bash
 colcon build --packages-select framework
@@ -125,7 +124,7 @@ red:
 
 `pose` 为地图系 `[x, y, qz, qw]`；x/y 单位米，qz/qw 为朝向四元数。`mode` 对应 `modes/*.yaml` 的 `id`。红方使用 `red`，蓝方使用 `blue`；两方坐标分别填写。不要修改 15/16 的空坐标来代替它们的动态目标算法。
 
-使用 `ros2 run tool point` 实车标定时，工具同时修改中央文件与 `src/function/config/on_demand/points.yaml` 中选中点位的 x/y，保留各自的朝向、名称、模式和注释。两份文件分别备份到所在目录的 `.point_backups/`；工具不修改 `install`，保存后构建 `framework` 并重启 Function sum，以加载新点位。
+使用 `ros2 run tool point` 实车标定时，工具同时修改中央文件与 `src/function/config/on_demand/points.yaml` 中选中点位的 x/y，保留各自的朝向、名称、模式和注释。
 
 ### 3.2 改某个特殊任务的运行参数
 
@@ -154,7 +153,7 @@ red:
 | -7/-8/-10 登阶 | `speed: 0.20`，单位 m/s | `special/stair_forward/task.py`、`special/stair_backward/task.py`、`special/stair_left/task.py` |
 | 15/16 动态目标导航 | `mode: 1` | `special/align_region/task.py`、`special/kfs_navigation/task.py` |
 
-表中实现路径均以 `src/function/detail/on_demand/` 开头。`parameters` 只会影响任务代码实际读取的字段；添加一个无人读取的键不会自动改变控制行为。-9/16 的 x/y/z 偏置是本次调用输入，来源为菜单或 `request.kfs_offset`，不是 `parameters` 中任意命名的字段。
+表中实现路径均以 `src/function/detail/on_demand/` 开头。
 
 15/16 的动态目标入口采用单段导航；`mode` 选择参数组，模式 2 仍按距离切换冲刺与精调。模式 3 的两段提前对齐由普通定点及 `ctx.go_to_pose()` 流程调用，15/16 使用其参数时不执行提前点流程。
 
@@ -166,7 +165,7 @@ red:
 | 2 | `src/config/framework/on_demand/modes/speed_2.yaml` | 远处冲刺、近点精调 |
 | 3 | `src/config/framework/on_demand/modes/speed_3.yaml` | 提前对齐、进入真实目标 |
 
-三份文件均完整列出 `controller_server` 与 `velocity_smoother`，名称、节点层级及数组格式与 `nav2_params.yaml` 一致。`id/name/base_mode` 用于功能侧选择模式；`parameters` 下才是对应 Nav2 节点的参数树。
+三份文件均完整列出 `controller_server` 与 `velocity_smoother`，名称、节点层级及数组格式与 `nav2_params.yaml` 一致。`id` 供点位的 `mode` 引用，`name` 用于菜单显示；`parameters` 下是本模式独立使用的 Nav2 参数树。每个文件的参数及流程设置只作用于自身。
 
 例如把模式 1 的线速度上限改为 0.4 m/s，应在现有 `FollowPath` 块调整 `v_linear_min: -0.4`、`v_linear_max: 0.4`，同时修改该文件的完整平滑器块：
 
@@ -228,9 +227,17 @@ pre_align:
 
 关闭 `enabled`、距离阈值接近零或无法获取初始地图位姿时，流程直接导航至真实目标。
 
-### 3.4 新模式的临时 Nav2 参数
+### 3.4 新增跑定点模式参数
 
-新增模式使用 `docs/templates/speed_mode.yaml` 的完整节点块，设置唯一 `id`、显示用 `name` 和 `base_mode: 1/2/3`。`parameters` 覆盖基础模式同名运行参数，缺省项继承基础模式；模式 2 可额外提供 `sprint_parameters`。创建文件、登记同步映射和点位引用的步骤见[新增速度模式](function_development.md#4-增加新的速度模式)。
+新增模式可复制 `docs/templates/speed_mode.yaml` 或所需流程的现有模式文件，设置唯一 `id` 和显示用 `name`，保留完整节点块后调整参数。点位选择 `mode: 4` 时，只使用编号 4 文件中的配置；修改其他模式不会改变本模式的值。创建文件、登记同步映射和点位引用的步骤见[新增速度模式](function_development.md#4-增加新的速度模式)。
+
+| 本模式的配置 | 导航行为 |
+|---|---|
+| 仅有 `parameters` | 全程使用本组参数直接导航 |
+| 同时有 `parameters`、`sprint_parameters` | 按本文件的 `switch_distance` 和 `switch_check_period` 切换冲刺与精调 |
+| 有 `parameters`，且 `pre_align.enabled: true` | 按本文件的 `pre_align` 设置提前对齐，再进入最终目标 |
+
+冲刺和精调两组必须包含相同的动态参数字段，数值分别配置。提前对齐与冲刺精调使用不同的模式文件。新增已有 Nav2 参数时，在对应节点的完整参数块中填写原参数名及正确类型；未列出的参数保持当前运行值。
 
 模式切换只更新运行期间可修改的参数：
 
@@ -246,7 +253,7 @@ pre_align:
 一次导航片段按以下顺序处理参数：
 
 1. 读取本次将修改的运行参数并保存原值。
-2. 设置所选模式；模式 2 的后续阶段继续使用同一份原值记录。
+2. 设置所选模式；冲刺、精调及提前对齐的后续阶段继续使用本次导航的同一份原值记录。
 3. 目标完成、失败或取消后，确认 Nav2 动作结束。
 4. 恢复原值并读回核对，成功后允许组合任务继续下一步。
 
@@ -258,11 +265,11 @@ pre_align:
 ros2 service call /restore_navigation_parameters std_srvs/srv/Trigger '{}'
 ```
 
-### 3.5 手写运动与检测参数
+### 3.5 特殊运动与检测参数
 
 `modes/special.yaml` 与速度文件使用相同的 `节点名 → ros__parameters → 插件名 → 参数名` 层级。`parameters` 用于普通移动、旋转和登阶，`uphill_parameters` 用于沿地图 X 方向上坡。每组完整列出 `controller_server` 和 `velocity_smoother`，并用 `simple_nav_node` 块配置本功能特有的条件。
 
-这些配置由 `simple_nav_node` 的手写控制读取，不向 Nav2 下发。标记 `# 对照项` 的字段只保留完整 Nav2 结构，本手写控制器不读取；其他字段实际参与控制。不要把对照项当作手写控制的调节入口。
+这些配置由 `simple_nav_node` 的特殊运动控制读取，不向 Nav2 下发。标记 `# 对照项` 的字段只保留完整 Nav2 结构，本特殊运动控制器不读取；其他字段实际参与控制。不要把对照项当作特殊运动控制的调节入口。
 
 | 配置位置（省略 `ros__parameters`） | 用途 |
 |---|---|
@@ -271,8 +278,8 @@ ros2 service call /restore_navigation_parameters std_srvs/srv/Trigger '{}'
 | `controller_server.FollowPath.v_linear_max`、`v_angular_max` | 线速度与角速度幅值上限 |
 | `controller_server.FollowPath.min_approach_linear_velocity`、`min_approach_angular_velocity` | 接近目标时的最小速度幅值 |
 | `controller_server.general_goal_checker.xy_goal_tolerance`、`yaw_goal_tolerance` | 位置与航向结束容差 |
-| `velocity_smoother.max_accel`、`max_decel` | 手写控制的加速与制动限制，顺序为 `[x, y, yaw]` |
-| 普通组 `controller_server.controller_frequency` | 阻塞式手写控制循环的周期来源，默认 50 Hz；登阶定时器由通信节点独立按 50 Hz 调度 |
+| `velocity_smoother.max_accel`、`max_decel` | 特殊运动控制的加速与制动限制，顺序为 `[x, y, yaw]` |
+| 普通组 `controller_server.controller_frequency` | 阻塞式特殊运动控制循环的周期来源，默认 50 Hz；登阶定时器由通信节点独立按 50 Hz 调度 |
 | `simple_nav_node.yaw_correction` | 移动时保持起始朝向；`rotation_kp` 为增益，`max_velocity_ratio` 为角速度上限比例 |
 | `simple_nav_node.cross_track` | 横向纠偏，使用 `translation_kp`、`v_linear_max`、`min_approach_linear_velocity`、`xy_goal_tolerance` |
 | 普通组 `simple_nav_node.lift_check_height` | 抬升检测高度阈值 |
@@ -287,15 +294,13 @@ ros2 service call /restore_navigation_parameters std_srvs/srv/Trigger '{}'
 先确认终端使用本工作空间，再读取相关节点：
 
 ```bash
-ros2 pkg prefix framework
-ros2 pkg prefix fishbot_navigation2
 ros2 param get /controller_server FollowPath.translation_kp
 ros2 param get /velocity_smoother max_velocity
 ros2 param get /simple_nav_node controller_server.FollowPath.v_linear_max
 ros2 param get /simple_nav_node uphill.controller_server.FollowPath.v_linear_max
 ```
 
-检查启动基准时应在没有导航任务执行的状态读取；检查速度模式时应在任务期间读取，结束后应恢复到任务前的值。手写控制参数在 Function sum 启动时加载，修改文件后需要同步并重启。
+检查启动基准时应在没有导航任务执行的状态读取；检查速度模式时应在任务期间读取，结束后应恢复到任务前的值。
 
 ## 4. micro-ROS 参数
 
@@ -318,12 +323,11 @@ Agent 源码保留在 `src/function/detail/continuous/micro_ros/src/`，启动�
 首次运行或修改 Agent 源码时，在项目根目录执行即可：
 
 ```bash
-source /opt/ros/humble/setup.bash
 colcon build
 source install/setup.bash
 ```
 
-默认统一使用根目录的 `install/`；外部工作空间仅在显式配置 `workspace` 时加载。首次编译需要准备系统依赖，并联网下载 Agent 的构建依赖。
+首次编译需要准备系统依赖，并联网下载 Agent 的构建依赖。
 
 该配置文件不在 `configuration/`，也不经过 `sync`。修改后，在项目根目录执行：
 
@@ -333,7 +337,6 @@ source install/setup.bash
 ros2 run micro_ros agent
 ```
 
-先停止旧 Agent，再单独启动或重新运行总启动，避免重复占用串口。
 
 ## 5. FAST-LIO 与 Livox 驱动参数
 
@@ -354,19 +357,16 @@ ros2 run micro_ros agent
 ros2 run chairman_config sync --files fast_lio/mid360.yaml
 ```
 
-重启 FAST-LIO/导航服务生效。其他雷达型号文件使用同样的覆盖方式，但修改它们不会改变当前使用 MID360 的启动链路；换型号还需要对应 launch 选择该配置。
 
 ### 5.2 MID360 网络
 
 文件：**`src/config/livox_ros_driver2/MID360_config.json`**。
 
-若主机网卡 IP 为 `192.168.1.60`，在 `MID360.host_net_info` 中把以下现有键一起改为该地址：`cmd_data_ip`、`push_msg_ip`、`point_data_ip`、`imu_data_ip`。雷达地址改在 `lidar_configs[0].ip`，例如 `192.168.1.186`。这些是设备网络地址，不是工程文件路径。
+雷达地址主要修改 `lidar_configs[0].ip`，例如 `192.168.1.186`。这些是设备网络地址。Livox_mid360雷达具体配置可参考[网站说明](https://qingyaozhuozhang.github.io/navigation/lidar/Mid-360%E6%BF%80%E5%85%89%E9%9B%B7%E8%BE%BE%E9%85%8D%E7%BD%AE%E6%95%99%E7%A8%8B/)
 
 ```bash
 ros2 run chairman_config sync --files livox_ros_driver2/MID360_config.json
 ```
-
-重启驱动生效。端口字段、`lidar_type` 和外参字段不是主机 IP，不要随地址一起替换。HAP 等配置也需同步对应文件，并由对应驱动 launch 加载。
 
 ## 6. odometry 参数
 
@@ -413,7 +413,7 @@ ros2 run chairman_config sync --files odometry/regions.yaml
 
 odometry 和 `sum` 都会读取区域配置，因此都要重启。
 
-使用 `ros2 run tool point` 标定区域中心时，工具同时修改中央文件与 `src/function/detail/continuous/odometry/config/regions.yaml`，将选中区域的边界设为平均位置 x/y 各向外扩展 0.6 m。两份文件均校验通过后才备份、写入，不修改 `install`；保存后构建 `odometry`，重启 odometry 与 Function sum。
+使用 `ros2 run tool point` 标定区域中心时，工具同时修改中央文件与 `src/function/detail/continuous/odometry/config/regions.yaml`，将选中区域的边界设为平均位置 x/y 各向外扩展 0.6 m。
 
 ## 7. 导航 launch、地图与 RViz
 
@@ -428,9 +428,7 @@ colcon build --packages-select fishbot_navigation2
 source install/setup.bash
 ```
 
-随后重启导航服务。launch 本身不属于 `sync` 管理的文件。
-
-RViz 的中央副本是 **`src/config/fishbot_navigation2/rviz/nav2_default_view.rviz`**。例如在该文件的 `Visualization Manager → Global Options → Fixed Frame` 设置显示坐标系为 `map`，再同步：
+RViz 的中央配置文件是 **`src/config/fishbot_navigation2/rviz/nav2_default_view.rviz`**。例如在该文件的 `Visualization Manager → Global Options → Fixed Frame` 设置显示坐标系为 `map`，再同步：
 
 ```bash
 ros2 run chairman_config sync --files fishbot_navigation2/rviz/nav2_default_view.rviz

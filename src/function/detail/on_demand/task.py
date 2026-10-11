@@ -81,7 +81,7 @@ class TaskServer(CommunicationNode):
             try:
                 self.stop_nav_cmd_tracking('任务收尾：速度清零')
                 stair.stop_stair_mode(self)
-                self.publish_manual_zero_speed('任务收尾：手写控制速度清零')
+                self.publish_manual_zero_speed('任务收尾：特殊运动控制速度清零')
                 self.restore_parameters()
             except Exception as exc:
                 response.success = False
@@ -148,8 +148,7 @@ class TaskContext:
             return False
         navigation.begin_parameters(self.node, mode)
         try:
-            base = self.node.mode_configs[mode]['base_mode']
-            return bool(callback(base)) and not self.cancelled
+            return bool(callback(self.node.active_mode)) and not self.cancelled
         finally:
             # 每个导航片段恢复参数后，组合任务才能执行下一步。
             self.node.restore_parameters()
@@ -161,26 +160,26 @@ class TaskContext:
         return self.go_to_pose(x, y, qz, qw, default_mode if mode is None else mode, name)
 
     def go_to_pose(self, x, y, qz, qw, mode=1, name='自定义目标'):
-        def navigate(base):
-            if base == 3:
-                return navigation.navigate_pre_align(self.node, x, y, qz, qw, name)
-            return navigation.navigate(self.node, x, y, qz, qw, name, speed_profile=base)
+        def navigate(selected):
+            if self.node.mode_configs[selected].get('pre_align', {}).get('enabled', False):
+                return navigation.navigate_pre_align(self.node, x, y, qz, qw, name, speed_profile=selected)
+            return navigation.navigate(self.node, x, y, qz, qw, name, speed_profile=selected)
         return self.navigation(mode, navigate)
 
     def align_region(self, mode=1):
         from chairman_tasks.special.align_region.task import navigate
-        return self.navigation(mode, lambda base: navigate(self.node, speed_profile=base))
+        return self.navigation(mode, lambda selected: navigate(self.node, speed_profile=selected))
 
     def navigate_offset(self, offset, mode=1):
         from chairman_tasks.special.kfs_navigation.task import navigate
-        return self.navigation(mode, lambda base: navigate(self.node, offset, speed_profile=base))
+        return self.navigation(mode, lambda selected: navigate(self.node, offset, speed_profile=selected))
 
-    def manual(self, callback, name='手写运动'):
+    def manual(self, callback, name='特殊运动'):
         if self.cancelled:
             return False
-        self.node.task_progress.stage(name, '正在执行手写控制')
+        self.node.task_progress.stage(name, '正在执行特殊运动控制')
         self.node.manual_control_active = True
-        self.node.manual_control_reason = '按需任务手写运动'
+        self.node.manual_control_reason = '按需任务特殊运动'
         self.node.reset_filter_state()
         try:
             return bool(callback()) and not self.cancelled
@@ -188,8 +187,8 @@ class TaskContext:
             stair.stop_stair_mode(self.node)
             self.node.manual_control_active = False
             self.node.manual_control_reason = ''
-            self.node.publish_manual_zero_speed('手写运动片段结束')
-            self.node.task_progress.end_stage('手写控制已结束，已发送零速度')
+            self.node.publish_manual_zero_speed('特殊运动片段结束')
+            self.node.task_progress.end_stage('特殊运动控制已结束，已发送零速度')
 
     def rotate(self, angle_degrees):
         from chairman_tasks.special.turn_left.task import rotate

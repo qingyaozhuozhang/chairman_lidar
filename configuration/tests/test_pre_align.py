@@ -67,11 +67,9 @@ class Robot:
         self.emergency_during_handoff = emergency
         self.cancel_current_task = False
         self.nav_cmd_tracking_enabled = False
-        self.pre_align_enabled = True
-        self.pre_align_distance = 0.5
-        self.pre_align_release_xy_tolerance = 0.1
-        self.pre_align_release_yaw_tolerance = 0.15
-        self.pre_align_near_adjust_timeout = 0.0
+        self.mode_configs = {3: {'pre_align': {
+            'enabled': True, 'distance': 0.5, 'release_xy_tolerance': 0.1,
+            'release_yaw_tolerance': 0.15, 'near_adjust_timeout': 0.0}}}
         self.handles = []
         self.goals = []
         self.timers = []

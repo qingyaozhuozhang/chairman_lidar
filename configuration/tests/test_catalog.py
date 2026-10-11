@@ -18,7 +18,9 @@ def config(tmp_path):
 
 
 def test_new_speed_mode_and_point_discovered_without_python_edits(config):
-    (config / 'on_demand/modes/precise.yaml').write_text('id: 4\nname: precise\nbase_mode: 1\nparameters: {}\n')
+    mode = catalog.read_yaml(config / 'on_demand/modes/speed_1.yaml')
+    mode.update(id=4, name='precise')
+    (config / 'on_demand/modes/precise.yaml').write_text(yaml.safe_dump(mode))
     path = config / 'on_demand/points.yaml'
     points = yaml.safe_load(path.read_text())
     points['red'][33] = {'name': 'new point', 'pose': [1.0, 2.0, 0.0, 1.0], 'mode': 4}
@@ -27,6 +29,40 @@ def test_new_speed_mode_and_point_discovered_without_python_edits(config):
     red, blue = catalog.load_points(modes, config)
     assert red[33] == [1.0, 2.0, 0.0, 1.0, 'new point', 4]
     assert len(blue) == 33
+
+
+def test_standalone_mode_does_not_require_modes_one_two_or_three(config):
+    directory = config / 'on_demand/modes'
+    mode = catalog.read_yaml(directory / 'speed_1.yaml')
+    mode.update(id=8, name='independent')
+    for path in directory.glob('speed_*.yaml'):
+        path.unlink()
+    (directory / 'speed_8.yaml').write_text(yaml.safe_dump(mode))
+    assert set(catalog.load_modes(config)) == {8}
+
+
+@pytest.mark.parametrize('change', ['empty', 'missing_phase_field', 'invalid_distance',
+                                  'invalid_period', 'invalid_align', 'combined_flows'])
+def test_independent_mode_rejects_incomplete_or_invalid_settings(config, change):
+    directory = config / 'on_demand/modes'
+    mode = catalog.read_yaml(directory / 'speed_2.yaml')
+    mode.update(id=4, name='invalid')
+    if change == 'empty':
+        mode['parameters'] = {}
+    elif change == 'missing_phase_field':
+        del mode['sprint_parameters']['velocity_smoother']['ros__parameters']['max_velocity']
+    elif change == 'invalid_distance':
+        mode['switch_distance'] = float('nan')
+    elif change == 'invalid_period':
+        mode['switch_check_period'] = 0.0
+    elif change == 'invalid_align':
+        mode.pop('sprint_parameters')
+        mode['pre_align'] = {'enabled': True, 'distance': -0.5}
+    else:
+        mode['pre_align'] = {'enabled': True}
+    (directory / 'speed_4.yaml').write_text(yaml.safe_dump(mode))
+    with pytest.raises(ValueError):
+        catalog.load_modes(config)
 
 
 def test_duplicate_mode_rejected(config):
