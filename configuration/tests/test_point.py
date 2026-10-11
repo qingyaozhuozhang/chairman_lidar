@@ -134,6 +134,117 @@ def test_workspace_search_is_local_and_explicit_path_does_not_fall_back(tmp_path
         point.resolve_project_files(tmp_path)
 
 
+def calibration_workspace(root, is_region):
+    point_text = ('# points\nred:\n'
+                  '  14: {name: 目标, pose: [0.000, 0.000, -0.707, 0.707], mode: 3}\n'
+                  'blue:\n  14: {name: 蓝方, pose: [9, 8, 0, 1], mode: 2}\n')
+    region_text = ('# regions\nregions_red:\n'
+                   '  - {id: 14, name: 区域, x_min: 0, x_max: 1, y_min: 0, y_max: 1}\n'
+                   'regions_blue:\n  - {id: 14, x_min: 9, x_max: 10, y_min: 8, y_max: 9}\n')
+    sources = {
+        False: ('src/config/framework/on_demand/points.yaml',
+                'src/function/config/on_demand/points.yaml'),
+        True: ('src/config/odometry/regions.yaml',
+               'src/function/detail/continuous/odometry/config/regions.yaml'),
+    }
+    for mode, paths in sources.items():
+        for index, relative in enumerate(paths):
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            text = region_text if mode else point_text
+            path.write_text(f'# source {index}\n' + text, encoding='utf-8')
+    package, relative = ('odometry', 'regions.yaml') if is_region else ('framework', 'on_demand/points.yaml')
+    installed = [root / 'install' / prefix / 'share' / package / 'config' / relative
+                 for prefix in (package, '')]
+    for path in installed:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # An invalid installed YAML must not interfere with source calibration.
+        path.write_text('installed: [must remain untouched\n', encoding='utf-8')
+    return [root / name for name in sources[is_region]], installed
+
+
+def calibrate_from_menu(root, is_region, monkeypatch):
+    monkeypatch.setenv('POINT_WORKSPACE', str(root))
+    answers = iter(['r', '14', '', 'b', 'b'])
+    monkeypatch.setattr('builtins.input', lambda _: next(answers))
+    collector = SimpleNamespace(elapsed=0.1, collect_next_average=lambda _: sample(1.25))
+    path = root / (point.REGIONS_PATH if is_region else point.POINTS_PATH)
+    point.run_mode(collector, path, is_region, 5.0)
+
+
+@pytest.mark.parametrize('is_region', [False, True])
+def test_menu_updates_both_sources_and_leaves_install_untouched(tmp_path, monkeypatch, is_region):
+    sources, installed = calibration_workspace(tmp_path, is_region)
+    before = {path: path.read_text() for path in sources + installed}
+    calibrate_from_menu(tmp_path, is_region, monkeypatch)
+    for path in sources:
+        expected = yaml.safe_load(before[path])
+        if is_region:
+            expected['regions_red'][0].update(x_min=0.65, x_max=1.85, y_min=-1.85, y_max=-0.65)
+        else:
+            expected['red'][14]['pose'][:2] = [1.25, -1.25]
+        assert yaml.safe_load(path.read_text()) == expected
+        assert path.read_text().splitlines()[:2] == before[path].splitlines()[:2]
+        backups = list((path.parent / '.point_backups').glob('*.bak'))
+        assert len(backups) == 1
+        assert backups[0].read_text() == before[path]
+    for path in installed:
+        assert path.read_text() == before[path]
+    assert not list((tmp_path / 'install').rglob('.point_backups'))
+
+
+@pytest.mark.parametrize('is_region', [False, True])
+def test_invalid_source_copy_prevents_all_writes(tmp_path, monkeypatch, capsys, is_region):
+    sources, installed = calibration_workspace(tmp_path, is_region)
+    sources[1].write_text(sources[1].read_text().replace('14', '13'))
+    before = {path: path.read_bytes() for path in sources + installed}
+    calibrate_from_menu(tmp_path, is_region, monkeypatch)
+    assert '本次标定未完成' in capsys.readouterr().out
+    assert all(path.read_bytes() == original for path, original in before.items())
+    assert not list(tmp_path.rglob('.point_backups'))
+
+
+@pytest.mark.parametrize('is_region', [False, True])
+def test_second_source_write_failure_restores_first_source(tmp_path, monkeypatch, capsys, is_region):
+    sources, installed = calibration_workspace(tmp_path, is_region)
+    before = {path: path.read_bytes() for path in sources + installed}
+    replace = os.replace
+    failed = False
+
+    def fail_once(source, target):
+        nonlocal failed
+        if Path(target) == sources[1] and not failed:
+            failed = True
+            raise OSError('simulated write failure')
+        return replace(source, target)
+
+    monkeypatch.setattr(point.os, 'replace', fail_once)
+    calibrate_from_menu(tmp_path, is_region, monkeypatch)
+    assert failed
+    assert '本次标定未完成' in capsys.readouterr().out
+    assert all(path.read_bytes() == original for path, original in before.items())
+
+
+def test_unchanged_central_point_still_updates_source_copy(tmp_path, monkeypatch):
+    sources, _ = calibration_workspace(tmp_path, False)
+    sources[0].write_text(sources[0].read_text().replace('[0.000, 0.000,', '[1.250, -1.250,'))
+    calibrate_from_menu(tmp_path, False, monkeypatch)
+    assert yaml.safe_load(sources[1].read_text())['red'][14]['pose'][:2] == [1.25, -1.25]
+    assert not (sources[0].parent / '.point_backups').exists()
+
+
+def test_source_symlink_into_install_is_rejected(tmp_path, monkeypatch, capsys):
+    sources, installed = calibration_workspace(tmp_path, False)
+    installed[0].write_bytes(sources[1].read_bytes())
+    sources[1].unlink()
+    sources[1].symlink_to(installed[0])
+    before = {path: path.read_bytes() for path in sources + installed}
+    calibrate_from_menu(tmp_path, False, monkeypatch)
+    assert '本次标定未完成' in capsys.readouterr().out
+    assert all(path.read_bytes() == original for path, original in before.items())
+    assert not list(tmp_path.rglob('.point_backups'))
+
+
 @pytest.mark.skipif(os.environ.get('CHAIRMAN_ROS_INTEGRATION') != '1', reason='Requires sourced ROS and test domain 197')
 def test_live_ros_pose_messages_collect_without_rosout():
     import rclpy

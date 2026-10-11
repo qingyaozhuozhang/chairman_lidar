@@ -3,9 +3,11 @@
 """chairman_lidar 点位标定：直接采集 /odom_map 的 10 条消息，逐项去极值取平均。
 
 ros2 run tool point
-  定点：src/config/framework/on_demand/points.yaml，只更新 x/y。
-  区域：src/config/odometry/regions.yaml，中心 ±0.6 m。
-只写源码配置；定点修改后构建 framework、重启功能进程，区域修改后 sync、重启相关节点。
+  定点：同时更新 src/config/framework/on_demand/points.yaml
+        和 src/function/config/on_demand/points.yaml，只修改 x/y。
+  区域：同时更新 src/config/odometry/regions.yaml
+        和 src/function/detail/continuous/odometry/config/regions.yaml，中心 ±0.6 m。
+不修改 install；保存后构建对应包并重启相关进程，以加载新的配置。
 """
 import argparse
 from copy import deepcopy
@@ -26,6 +28,8 @@ SAMPLE_COUNT = 10
 REGION_HALF_SIZE = 0.6
 POINTS_PATH = Path('src/config/framework/on_demand/points.yaml')
 REGIONS_PATH = Path('src/config/odometry/regions.yaml')
+POINTS_COPY = Path('src/function/config/on_demand/points.yaml')
+REGIONS_COPY = Path('src/function/detail/continuous/odometry/config/regions.yaml')
 
 
 @dataclass(frozen=True)
@@ -145,6 +149,22 @@ def resolve_project_files(workspace=None):
     return root / POINTS_PATH, root / REGIONS_PATH
 
 
+def calibration_paths(workspace, is_region):
+    """限定为当前工程的两份源码配置，禁止通过符号链接写入 install 或其他工程。"""
+    root = find_workspace(workspace)
+    relative_paths = (REGIONS_PATH, REGIONS_COPY) if is_region else (POINTS_PATH, POINTS_COPY)
+    paths = []
+    for relative in relative_paths:
+        path = (root / relative).resolve()
+        if not path.is_relative_to(root / 'src'):
+            raise ValueError(f'标定文件必须位于当前工程 src 内：{root / relative}')
+        if not path.is_file():
+            raise FileNotFoundError(f'缺少对应源码配置：{path}')
+        if path not in paths:
+            paths.append(path)
+    return paths
+
+
 class UniqueKeyLoader(yaml.SafeLoader):
     pass
 
@@ -210,8 +230,8 @@ def region_items(path, side):
     return items
 
 
-def write_scalar_updates(path, original, replacements, expected):
-    """只替换数值，保留其他内容、注释和布局，备份后原子写入。"""
+def prepare_scalar_updates(original, replacements, expected):
+    """生成并校验数值替换结果，保留其他内容、注释和布局，暂不写入。"""
     if any(isinstance(token, (yaml.tokens.AliasToken, yaml.tokens.AnchorToken))
            for token in yaml.scan(original)):
         raise ValueError('标定文件含 YAML 锚点/别名，请展开后再修改，避免联动其他点位')
@@ -225,18 +245,14 @@ def write_scalar_updates(path, original, replacements, expected):
         updated = updated[:start] + value + updated[end:]
     if yaml.load(updated, Loader=UniqueKeyLoader) != expected:
         raise ValueError('更新校验失败：取消写入，避免修改其他字段')
-    if path.read_text(encoding='utf-8') != original:
-        raise RuntimeError('配置已被其他编辑器修改，请重新选择点位')
-    if updated == original:
-        return None
-    backups = path.parent / '.point_backups'
-    backups.mkdir(exist_ok=True)
-    backup = backups / f'{path.name}.{time.time_ns()}-{uuid.uuid4().hex[:8]}.bak'
-    backup.write_text(original, encoding='utf-8')
+    return original, updated
+
+
+def atomic_write(path, text):
     fd, temporary = tempfile.mkstemp(prefix='.' + path.name, dir=path.parent)
     try:
         with os.fdopen(fd, 'w', encoding='utf-8') as stream:
-            stream.write(updated)
+            stream.write(text)
             stream.flush()
             os.fsync(stream.fileno())
         os.chmod(temporary, path.stat().st_mode & 0o777)
@@ -244,12 +260,48 @@ def write_scalar_updates(path, original, replacements, expected):
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
-    if path.read_text(encoding='utf-8') != updated:
-        raise RuntimeError(f'写入后校验失败；原文件备份在 {backup}')
-    return backup
 
 
-def update_point_xy(path, side, point_id, x, y):
+def commit_updates(updates):
+    """全部校验、备份后逐文件替换；发生异常时恢复本批次已修改的文件。"""
+    for path, (original, _) in updates.items():
+        if path.read_text(encoding='utf-8') != original:
+            raise RuntimeError(f'配置已被其他编辑器修改，请重新选择点位：{path}')
+    changed = {path: texts for path, texts in updates.items() if texts[0] != texts[1]}
+    backups = {}
+    for path, (original, _) in changed.items():
+        directory = path.parent / '.point_backups'
+        if directory.is_symlink():
+            raise ValueError(f'备份目录不能是符号链接：{directory}')
+        directory.mkdir(exist_ok=True)
+        backup = directory / f'{path.name}.{time.time_ns()}-{uuid.uuid4().hex[:8]}.bak'
+        backup.write_text(original, encoding='utf-8')
+        backups[path] = backup
+    attempted = []
+    try:
+        for path, (original, updated) in changed.items():
+            if path.read_text(encoding='utf-8') != original:
+                raise RuntimeError(f'配置已被其他编辑器修改：{path}')
+            attempted.append(path)
+            atomic_write(path, updated)
+            if path.read_text(encoding='utf-8') != updated:
+                raise RuntimeError(f'写入后校验失败：{path}')
+    except BaseException as exc:
+        failures = []
+        for path in reversed(attempted):
+            try:
+                original = changed[path][0]
+                if path.read_text(encoding='utf-8') != original:
+                    atomic_write(path, original)
+            except OSError as restore_error:
+                failures.append(f'{path}：{restore_error}；备份：{backups[path]}')
+        if failures:
+            raise RuntimeError('写入失败且部分文件恢复失败：' + '；'.join(failures)) from exc
+        raise
+    return backups
+
+
+def prepare_point_xy(path, side, point_id, x, y):
     point_items(path, side)
     text, data, tree = read_document(path)
     if point_id not in data[side]:
@@ -264,10 +316,10 @@ def update_point_xy(path, side, point_id, x, y):
         raise ValueError('pose 必须为四个数值的列表')
     expected = deepcopy(data)
     expected[side][point_id]['pose'][:2] = [round(x, 3), round(y, 3)]
-    return write_scalar_updates(path, text, [(node.value[0], x), (node.value[1], y)], expected)
+    return prepare_scalar_updates(text, [(node.value[0], x), (node.value[1], y)], expected)
 
 
-def update_region_center(path, side, region_id, x, y):
+def prepare_region_center(path, side, region_id, x, y):
     region_items(path, side)
     text, data, tree = read_document(path)
     key = 'regions_' + side
@@ -281,8 +333,16 @@ def update_region_center(path, side, region_id, x, y):
                   y_min=y - REGION_HALF_SIZE, y_max=y + REGION_HALF_SIZE)
     expected = deepcopy(data)
     expected[key][index].update({k: round(v, 3) for k, v in values.items()})
-    return write_scalar_updates(
-        path, text, [(mapping_value(group.value[index], k), v) for k, v in values.items()], expected)
+    return prepare_scalar_updates(
+        text, [(mapping_value(group.value[index], k), v) for k, v in values.items()], expected)
+
+
+def update_point_xy(path, side, point_id, x, y):
+    return commit_updates({path: prepare_point_xy(path, side, point_id, x, y)}).get(path)
+
+
+def update_region_center(path, side, region_id, x, y):
+    return commit_updates({path: prepare_region_center(path, side, region_id, x, y)}).get(path)
 
 
 def ask(prompt):
@@ -317,7 +377,7 @@ def show_items(items, is_region):
         print(f'{key:3} {xy}  {item.get("name", key)}')
 
 
-def run_mode(collector, path, is_region, timeout):
+def run_mode(collector, path, is_region, timeout, workspace=None):
     while True:
         side = choose_side()
         if side is None:
@@ -349,21 +409,30 @@ def run_mode(collector, path, is_region, timeout):
                 print('未开始采集，请重新选择。')
                 continue
             try:
+                paths = calibration_paths(workspace, is_region)
                 print('正在接收 10 条新位姿……', flush=True)
                 avg = collector.collect_next_average(timeout)
                 print(f'采集用时 {collector.elapsed:.2f}s；逐项去掉最大/最小值，剩余 8 条平均：'
                       f'X={avg.x:.3f}, Y={avg.y:.3f}, Z={avg.z:.3f}, Yaw={avg.yaw:.3f}')
-                update = update_region_center if is_region else update_point_xy
-                backup = update(path, side, selected, avg.x, avg.y)
-                print(f'已保存并校验：{path}' if backup else '坐标未变化。')
-                if backup:
-                    print(f'原文件备份：{backup}')
+                prepare = prepare_region_center if is_region else prepare_point_xy
+                updates = {}
+                for target in paths:
+                    try:
+                        updates[target] = prepare(target, side, selected, avg.x, avg.y)
+                    except (OSError, ValueError, yaml.YAMLError) as exc:
+                        raise ValueError(f'{target}：{exc}') from exc
+                backups = commit_updates(updates)
+                for target in paths:
+                    if target in backups:
+                        print(f'已保存并校验：{target}\n原文件备份：{backups[target]}')
+                    else:
+                        print(f'坐标未变化：{target}')
                 if is_region:
-                    print('区域为中心±0.6m。生效：ros2 run chairman_config sync --files odometry/regions.yaml；'
-                          '重启 odometry 与 framework 功能进程。')
+                    print('两份源码区域配置已更新为中心±0.6m。构建 odometry 后，'
+                          '重启 odometry 与 framework 功能进程加载新配置。')
                 else:
-                    print('已保留朝向、名称和模式。生效：ros2 run chairman_config sync --files framework/on_demand/points.yaml；'
-                          '重启 framework 功能进程。')
+                    print('两份源码点位已更新，保留各自的朝向、名称和模式。'
+                          '构建 framework 后，重启功能进程加载新配置。')
             except (OSError, ValueError, RuntimeError, yaml.YAMLError) as exc:
                 print(f'本次标定未完成：{exc}')
 
@@ -383,12 +452,14 @@ def main(args=None):
     if not math.isfinite(options.timeout) or options.timeout <= 0:
         parser.error('--timeout 必须是正有限数值')
     try:
-        points, regions = resolve_project_files(options.workspace)
+        workspace = find_workspace(options.workspace)
+        points, regions = resolve_project_files(workspace)
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     print('================ chairman_lidar 点位标定 ================')
     print(f'采集：{options.topic}（map 位姿）；每批 10 条，去掉最大/最小值后平均。')
     print(f'定点文件：{points}\n区域文件：{regions}')
+    print('保存时同时更新 src/function 中的对应源码配置，不修改 install。')
     print('请先启动导航与 odometry，等待定位就绪。每次采集前将机器人停稳。')
     rclpy.init(args=argv[1:], signal_handler_options=SignalHandlerOptions.NO)
     node = None
@@ -409,9 +480,9 @@ def main(args=None):
                 break
             try:
                 if choice == '1':
-                    run_mode(collector, regions, True, options.timeout)
+                    run_mode(collector, regions, True, options.timeout, workspace)
                 elif choice == '2':
-                    run_mode(collector, points, False, options.timeout)
+                    run_mode(collector, points, False, options.timeout, workspace)
                 else:
                     print('输入无效。')
             except (OSError, ValueError, yaml.YAMLError) as exc:

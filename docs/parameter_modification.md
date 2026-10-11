@@ -125,6 +125,8 @@ red:
 
 `pose` 为地图系 `[x, y, qz, qw]`；x/y 单位米，qz/qw 为朝向四元数。`mode` 对应 `modes/*.yaml` 的 `id`。红方使用 `red`，蓝方使用 `blue`；两方坐标分别填写。不要修改 15/16 的空坐标来代替它们的动态目标算法。
 
+使用 `ros2 run tool point` 实车标定时，工具同时修改中央文件与 `src/function/config/on_demand/points.yaml` 中选中点位的 x/y，保留各自的朝向、名称、模式和注释。两份文件分别备份到所在目录的 `.point_backups/`；工具不修改 `install`，保存后构建 `framework` 并重启 Function sum，以加载新点位。
+
 ### 3.2 改某个特殊任务的运行参数
 
 文件：**`src/config/framework/on_demand/functions.yaml`**。
@@ -410,6 +412,8 @@ ros2 run chairman_config sync --files odometry/regions.yaml
 ```
 
 odometry 和 `sum` 都会读取区域配置，因此都要重启。
+
+使用 `ros2 run tool point` 标定区域中心时，工具同时修改中央文件与 `src/function/detail/continuous/odometry/config/regions.yaml`，将选中区域的边界设为平均位置 x/y 各向外扩展 0.6 m。两份文件均校验通过后才备份、写入，不修改 `install`；保存后构建 `odometry`，重启 odometry 与 Function sum。
 
 ## 7. 导航 launch、地图与 RViz
 

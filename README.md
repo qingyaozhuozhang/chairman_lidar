@@ -336,10 +336,12 @@ ros2 run tool point
 
 | 模式 | 写入位置 | 修改内容与生效方式 |
 |---|---|---|
-| 固定点 | `src/config/framework/on_demand/points.yaml` | 修改 x/y，保留 qz/qw、名称与模式；15/16 为动态目标。完成后同步 `framework/on_demand/points.yaml` 并重启 Function sum |
-| 区域中心 | `src/config/odometry/regions.yaml` | 选中区域改为中心±0.6 m；完成后执行 `ros2 run chairman_config sync --files odometry/regions.yaml`，重启 odometry 与功能进程 |
+| 固定点 | `src/config/framework/on_demand/points.yaml` 与 `src/function/config/on_demand/points.yaml` | 两份文件中同一半场、同一编号的 x/y 同时更新，保留各自的 qz/qw、名称与模式；15/16 为动态目标。保存后构建 `framework` 并重启 Function sum |
+| 区域中心 | `src/config/odometry/regions.yaml` 与 `src/function/detail/continuous/odometry/config/regions.yaml` | 两份文件中同一半场、同一编号的区域边界同时更新为中心±0.6 m。保存后构建 `odometry`，重启 odometry 与功能进程 |
 
-每次修改自动备份到配置所在目录的 `.point_backups/`，保留 YAML 其他字段和注释。默认只编辑本工程的源码配置，不直接修改运行中的参数或安装副本。工具根据自身路径定位工程，也可用 `--workspace /项目根目录` 指定；`--timeout 10` 调整超时，`--topic /odom_map` 指定同类型的 map 位姿话题。`POINT_WORKSPACE` 环境变量也可指定工程。
+保存前先校验两份源码配置，再分别备份到各自目录的 `.point_backups/` 并写入，保留 YAML 其他字段和注释。任何一份缺失或目标编号无效时均不写入；写入发生异常时恢复本次已修改的文件。工具不修改 `install`，也不直接更新运行中的节点参数。
+
+工具根据自身路径定位工程，也可用 `--workspace /项目根目录` 指定；`--timeout 10` 调整超时，`--topic /odom_map` 指定同类型的 map 位姿话题。`POINT_WORKSPACE` 环境变量也可指定工程。
 
 修改工具代码后执行 `colcon build --packages-select tool`、`source install/setup.bash`。也可在已加载 ROS 环境的终端直接运行 `python3 tool/point.py`。
 
