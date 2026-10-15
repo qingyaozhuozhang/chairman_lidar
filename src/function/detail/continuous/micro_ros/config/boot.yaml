@@ -1,5 +1,5 @@
 # Agent 与导航一起构建；留空使用项目 install/setup.bash 提供的环境。
 # 只有使用其他 Agent 工作空间时才填写相对于项目根目录的路径。
 workspace: ""
-device: /dev/ttyUSB0
-baud: 921600
+# UDP IPv4 监听端口；下位机的 Agent 地址使用本机 IP 和此端口。
+port: 8888

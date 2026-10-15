@@ -17,9 +17,11 @@ def find_workspace():
 
 
 def agent_command(config, root=None):
-    agent = ['ros2', 'run', 'micro_ros_agent', 'micro_ros_agent', 'serial',
-             '--dev', str(config.get('device', '/dev/ttyUSB0')),
-             '-b', str(int(config.get('baud', 921600)))]
+    port = config.get('port', 8888)
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise ValueError('port 必须是 1～65535 的整数')
+    agent = ['ros2', 'run', 'micro_ros_agent', 'micro_ros_agent', 'udp4',
+             '--port', str(port)]
     workspace = str(config.get('workspace', '')).strip()
     if not workspace:
         return agent

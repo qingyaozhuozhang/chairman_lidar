@@ -27,7 +27,7 @@ src/config/                              # 中央参数配置入口，使用 syn
 src/function/
 ├── config/on_demand/                    
 └── detail/continuous/
-    ├── micro_ros/config/boot.yaml        # 串口及 Agent 环境
+    ├── micro_ros/config/boot.yaml        # UDP 端口及 Agent 环境
     └── odometry/config/                 # 中央 odometry 配置的包内副本
 src/fishbot/fishbot_navigation2/
 ├── config/nav2_params.yaml              # 中央 Nav2 配置的包内副本
@@ -308,15 +308,19 @@ ros2 param get /simple_nav_node uphill.controller_server.FollowPath.v_linear_max
 
 ```yaml
 workspace: ""
-device: /dev/ttyUSB0
-baud: 921600
+port: 8888
 ```
 
 | 字段 | 说明 |
 |---|---|
 | `workspace` | 默认留空 `""`，使用项目统一构建的 Agent。只有使用外部工作空间时才填写相对项目根目录的路径，外部目录需有 `install/setup.bash` |
-| `device` | 当前设备串口名，例如 `/dev/ttyUSB0`；设备路径本身是系统路径 |
-| `baud` | 整数波特率，须与下位机一致；当前配置为 921600 |
+| `port` | UDP IPv4 监听端口，范围 1～65535，默认 8888；下位机的 Agent 地址应配置为运行本节点的电脑 IP 和此端口 |
+
+`ros2 run micro_ros agent` 读取该配置后执行以下命令，总启动和日志记录入口均使用同一配置：
+
+```bash
+ros2 run micro_ros_agent micro_ros_agent udp4 --port 8888
+```
 
 Agent 源码保留在 `src/function/detail/continuous/micro_ros/src/`，启动包的 `package.xml` 和 `CMakeLists.txt` 位于 `micro_ros/launcher/`，使 colcon 能从根目录同时发现启动包和 Agent。`agent.py`、`config/boot.yaml` 的编辑位置保持不变。
 

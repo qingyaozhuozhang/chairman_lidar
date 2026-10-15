@@ -134,7 +134,7 @@ source install/setup.bash
 | Nav2 基础配置 | `src/config/fishbot_navigation2/nav2_params.yaml` | 机器人尺寸、控制器、代价地图等参数 |
 | 场地初始位姿与区域 | `src/config/odometry/initial_poses.yaml`、`src/config/odometry/regions.yaml` | 4 个场地的初始位姿及红蓝区域边界 |
 | 定点与任务模式 | `src/config/framework/on_demand/` | 红蓝点位、特殊任务、三种速度模式及特殊运动控制参数 |
-| 下位机通信 | `src/function/detail/continuous/micro_ros/config/boot.yaml` | 默认使用本项目 Agent；串口设备、波特率及可选外部工作空间 |
+| 下位机通信 | `src/function/detail/continuous/micro_ros/config/boot.yaml` | 默认使用本项目 Agent；UDP IPv4 监听端口 8888 及可选外部工作空间 |
 | 地图和机器人模型 | `src/config/fishbot_navigation2/rviz`和`src/fishbot/fishbot_navigation/urdf` | 当前加载 `src/fishbot/fisbot_navigation/maps/room.yaml`、`src/fishbot/fishbot_navigation/PCD/scans.pcd`；核对 URDF、TF 安装偏移和扫描范围 |
 
 **注：**
@@ -164,7 +164,7 @@ ros2 run configuration main_boot
 
 | 终端 | 实际入口 | 职责 |
 |---|---|---|
-| Micro ROS Agent | `ros2 run micro_ros agent` | 持续串口通信 |
+| Micro ROS Agent | `ros2 run micro_ros agent` | UDP IPv4 通信，默认监听 8888 端口 |
 | Navigation2 | `ros2 launch fishbot_navigation2 navigation2.launch.py` | 雷达、FAST-LIO、地形分析、Nav2、RViz 等导航服务 |
 | Function sum | `ros2 run framework sum` | 功能选择与执行 |
 | Odometry | `ros2 run odometry odometry` | 地图位姿输出、初始位姿发布与区域检测 |

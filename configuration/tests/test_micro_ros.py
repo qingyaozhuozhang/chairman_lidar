@@ -12,22 +12,22 @@ spec.loader.exec_module(agent)
 
 
 def test_micro_ros_uses_current_environment_without_external_workspace():
-    assert agent.agent_command({'device': '/dev/robot board', 'baud': 115200}) == [
-        'ros2', 'run', 'micro_ros_agent', 'micro_ros_agent', 'serial', '--dev', '/dev/robot board', '-b', '115200']
+    assert agent.agent_command({'port': 8889}) == [
+        'ros2', 'run', 'micro_ros_agent', 'micro_ros_agent', 'udp4', '--port', '8889']
 
 
-def test_relative_overlay_and_device_are_shell_quoted(tmp_path):
+def test_relative_overlay_is_shell_quoted_and_udp_port_is_forwarded(tmp_path):
     root = tmp_path / 'navigation robot'
     root.mkdir()
     overlay = tmp_path / 'micro robot'
     (overlay / 'install').mkdir(parents=True)
     (overlay / 'install/setup.bash').touch()
-    config = {'workspace': '../micro robot', 'device': '/dev/robot;unexpected', 'baud': 921600}
+    config = {'workspace': '../micro robot', 'port': 8888}
     command = agent.agent_command(config, root)
     assert command[:2] == ['bash', '-c']
     parts = shlex.split(command[2])
     assert parts[1] == str(root / '../micro robot/install/setup.bash')
-    assert parts[-3:] == ['/dev/robot;unexpected', '-b', '921600']
+    assert parts[-3:] == ['udp4', '--port', '8888']
 
 
 def test_colcon_discovers_agent_and_launcher_from_project_root(tmp_path):
@@ -45,4 +45,4 @@ def test_default_config_uses_project_environment_without_nested_install():
     config_path = Path(__file__).parents[2] / 'src/function/detail/continuous/micro_ros/config/boot.yaml'
     config = yaml.safe_load(config_path.read_text())
     command = agent.agent_command(config)
-    assert command[:4] == ['ros2', 'run', 'micro_ros_agent', 'micro_ros_agent']
+    assert command == ['ros2', 'run', 'micro_ros_agent', 'micro_ros_agent', 'udp4', '--port', '8888']
