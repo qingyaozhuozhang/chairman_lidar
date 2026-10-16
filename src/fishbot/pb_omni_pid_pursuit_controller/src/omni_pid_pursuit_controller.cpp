@@ -351,7 +351,7 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
 
   applyCurvatureLimitation(transformed_plan, carrot_pose, lin_vel_x, lin_vel_y);
 
-  //applyApproachVelocityScaling(transformed_plan, lin_vel_x, lin_vel_y);
+  applyApproachVelocityScaling(transformed_plan, lin_vel_x, lin_vel_y);
 
   // Transform local frame to global frame to use in collision checking
   nav_msgs::msg::Path costmap_frame_local_plan;
@@ -593,7 +593,7 @@ double OmniPidPursuitController::approachVelocityScalingFactor(
     // Here we will use a regular euclidean distance from the robot frame (origin)
     // to get smooth scaling, regardless of path density.
     double distance_to_last_pose = std::hypot(last.pose.position.x, last.pose.position.y);
-    return 1.0;
+    return distance_to_last_pose / approach_velocity_scaling_dist_;
   } else {
     return 1.0;
   }
@@ -604,7 +604,7 @@ void OmniPidPursuitController::applyApproachVelocityScaling(
 {
   constexpr double kTinyVelocity = 1e-6;
 
-  if (linear_vel_x <= kTinyVelocity && linear_vel_y <= kTinyVelocity) {
+  if (std::abs(linear_vel_x) <= kTinyVelocity && std::abs(linear_vel_y) <= kTinyVelocity) {
     return;
   }
 
@@ -617,11 +617,11 @@ void OmniPidPursuitController::applyApproachVelocityScaling(
   }
 
   // 未进入最终目标容差时，强制保持最小可驱动速度，避免 0.001/0.002m/s 这种无意义蠕动。
-  if (linear_vel_x > kTinyVelocity && linear_vel_x < min_approach_linear_velocity_) {
-    linear_vel_x = min_approach_linear_velocity_;
+  if (std::abs(linear_vel_x) > kTinyVelocity && std::abs(linear_vel_x) < min_approach_linear_velocity_) {
+    linear_vel_x = std::copysign(min_approach_linear_velocity_, linear_vel_x);
   }
-  if (linear_vel_y > kTinyVelocity && linear_vel_y < min_approach_linear_velocity_) {
-    linear_vel_y = min_approach_linear_velocity_;
+  if (std::abs(linear_vel_y) > kTinyVelocity && std::abs(linear_vel_y) < min_approach_linear_velocity_) {
+    linear_vel_y = std::copysign(min_approach_linear_velocity_, linear_vel_y);
   }
 }
 
