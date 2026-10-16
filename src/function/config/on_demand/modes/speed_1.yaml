@@ -3,6 +3,7 @@
 # 其余字段通过参数服务临时赋值，任务结束恢复运行前的值。
 id: 1
 name: speed_1
+base_mode: 1
 
 parameters:
   controller_server:
@@ -33,9 +34,12 @@ parameters:
         plugin: "pb_omni_pid_pursuit_controller::OmniPidPursuitController"  # 启动项
 
         # 平移 PID
-        translation_kp: 3.0
-        translation_ki: 0.0
-        translation_kd: 0.0
+        translation_kpx: 3.0
+        translation_kix: 0.0
+        translation_kdx: 0.0
+        translation_kpy: 3.0
+        translation_kiy: 0.0
+        translation_kdy: 0.0
 
         # 旋转 PID
         enable_rotation: true  # 行驶期间允许旋转
@@ -66,8 +70,10 @@ parameters:
         approach_velocity_scaling_dist: 0.3
 
         # 全向轮速度限制
-        v_linear_min: -1.0
-        v_linear_max: 1.0
+        v_linear_minx: -1.0
+        v_linear_maxx: 1.0
+        v_linear_miny: -1.0
+        v_linear_maxy: 1.0
         v_angular_min: -1.0
         v_angular_max: 1.0
 
