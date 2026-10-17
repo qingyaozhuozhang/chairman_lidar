@@ -352,7 +352,35 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
   applyCurvatureLimitation(transformed_plan, carrot_pose, lin_vel_x, lin_vel_y);
 
   applyApproachVelocityScaling(transformed_plan, lin_vel_x, lin_vel_y);
+  double dist_to_final_goal = 999.0;
+  if (!global_plan_.poses.empty()) {
+    geometry_msgs::msg::PoseStamped goal_in_base;
+    if (transformPose(costmap_ros_->getBaseFrameID(), global_plan_.poses.back(), goal_in_base)) {
+      dist_to_final_goal = std::hypot(goal_in_base.pose.position.x, goal_in_base.pose.position.y);
+    }
+  }
 
+  if (dist_to_final_goal < 0.015) {
+    lin_vel_x = 0.0;
+    lin_vel_y = 0.0;
+    is_direction_latched_ = false; 
+  } else if (dist_to_final_goal <= 0.10) {
+    if (!is_direction_latched_) {
+      double current_v = std::hypot(lin_vel_x, lin_vel_y);
+      if (current_v > 1e-4) {
+        latched_ux_ = lin_vel_x / current_v;
+        latched_uy_ = lin_vel_y / current_v;
+        latched_speed_ = std::max(current_v, 0.05); 
+        is_direction_latched_ = true;
+      }
+    }
+    if (is_direction_latched_) {
+      lin_vel_x = latched_speed_ * latched_ux_;
+      lin_vel_y = latched_speed_ * latched_uy_;
+    }
+  } else {
+    is_direction_latched_ = false;
+  }
   // Transform local frame to global frame to use in collision checking
   nav_msgs::msg::Path costmap_frame_local_plan;
 
@@ -621,14 +649,13 @@ void OmniPidPursuitController::applyApproachVelocityScaling(
   }
 
   // 未进入最终目标容差时，强制保持最小可驱动速度，避免 0.001/0.002m/s 这种无意义蠕动。
-  if (distance_to_goal > 0.3) {
-    if (std::abs(linear_vel_x) > kTinyVelocity && std::abs(linear_vel_x) < min_approach_linear_velocity_) {
-      linear_vel_x = std::copysign(min_approach_linear_velocity_, linear_vel_x);
-    }
-    if (std::abs(linear_vel_y) > kTinyVelocity && std::abs(linear_vel_y) < min_approach_linear_velocity_) {
-      linear_vel_y = std::copysign(min_approach_linear_velocity_, linear_vel_y);
-    }
-  }
+  // if (distance_to_goal > 100.0) {
+  //   if (std::abs(linear_vel_x) > kTinyVelocity && std::abs(linear_vel_x) < min_approach_linear_velocity_) {
+  //     linear_vel_x = std::copysign(min_approach_linear_velocity_, linear_vel_x);
+  //   }
+  //   if (std::abs(linear_vel_y) > kTinyVelocity && std::abs(linear_vel_y) < min_approach_linear_velocity_) {
+  //     linear_vel_y = std::copysign(min_approach_linear_velocity_, linear_vel_y);
+  //   }
 }
 
 void OmniPidPursuitController::applyCurvatureLimitation(

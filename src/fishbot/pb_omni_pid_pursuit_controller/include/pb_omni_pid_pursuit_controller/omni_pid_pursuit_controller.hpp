@@ -134,6 +134,11 @@ private:
   std::shared_ptr<PID> move_pid_x;
   std::shared_ptr<PID> move_pid_y;
   std::shared_ptr<PID> heading_pid_;
+  // 末端 10cm 方向锁存与固定速度
+  bool is_direction_latched_{false};
+  double latched_ux_{0.0};
+  double latched_uy_{0.0};
+  double latched_speed_{0.0};
 
   // 平动 PID 参数（x/y 独立）
   double translation_kp_x, translation_ki_x, translation_kd_x;
