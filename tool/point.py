@@ -7,7 +7,8 @@ ros2 run tool point
         和 src/function/config/on_demand/points.yaml，只修改 x/y。
   区域：同时更新 src/config/odometry/regions.yaml
         和 src/function/detail/continuous/odometry/config/regions.yaml，中心 ±0.6 m。
-不修改 install；保存后构建对应包并重启相关进程，以加载新的配置。
+  启动点：同时更新 src/config/odometry/initial_poses.yaml
+          和 src/function/detail/continuous/odometry/config/initial_poses.yaml，修改 x/y/qz/qw。
 """
 import argparse
 from copy import deepcopy
@@ -29,6 +30,9 @@ POINTS_PATH = Path('src/config/framework/on_demand/points.yaml')
 REGIONS_PATH = Path('src/config/odometry/regions.yaml')
 POINTS_COPY = Path('src/function/config/on_demand/points.yaml')
 REGIONS_COPY = Path('src/function/detail/continuous/odometry/config/regions.yaml')
+INITIAL_POSES_PATH = Path('src/config/odometry/initial_poses.yaml')
+INITIAL_POSES_COPY = Path('src/function/detail/continuous/odometry/config/initial_poses.yaml')
+START_NAMES = {1: '红武馆', 2: '红对抗', 3: '蓝武馆', 4: '蓝对抗'}
 
 
 @dataclass(frozen=True)
@@ -148,10 +152,14 @@ def resolve_project_files(workspace=None):
     return root / POINTS_PATH, root / REGIONS_PATH
 
 
-def calibration_paths(workspace, is_region):
+def calibration_paths(workspace, kind):
     """限定为当前工程的两份源码配置，禁止通过符号链接写入 install 或其他工程。"""
     root = find_workspace(workspace)
-    relative_paths = (REGIONS_PATH, REGIONS_COPY) if is_region else (POINTS_PATH, POINTS_COPY)
+    relative_paths = {
+        'point': (POINTS_PATH, POINTS_COPY),
+        'region': (REGIONS_PATH, REGIONS_COPY),
+        'initial_pose': (INITIAL_POSES_PATH, INITIAL_POSES_COPY),
+    }[kind]
     paths = []
     for relative in relative_paths:
         path = (root / relative).resolve()
@@ -229,7 +237,23 @@ def region_items(path, side):
     return items
 
 
-def prepare_scalar_updates(original, replacements, expected):
+def initial_pose_items(path):
+    _, data, _ = read_document(path)
+    items = data.get('poses')
+    if not isinstance(items, dict) or not items:
+        raise ValueError('initial_poses.yaml 必须包含 poses 字典')
+    for number, pose in items.items():
+        if type(number) is not int or number not in START_NAMES or not isinstance(pose, dict):
+            raise ValueError('启动点编号必须是 1、2、3、4，位姿必须是字典')
+        for key in ('lidar_init_x', 'lidar_init_y', 'lidar_init_qz', 'lidar_init_qw'):
+            if type(pose.get(key)) not in (float, int) or not math.isfinite(pose[key]):
+                raise ValueError(f'启动点 {number} 的 {key} 必须为有限数值')
+        if math.hypot(pose['lidar_init_qz'], pose['lidar_init_qw']) < 1e-9:
+            raise ValueError(f'启动点 {number} 的朝向四元数不能为零')
+    return items
+
+
+def prepare_scalar_updates(original, replacements, expected, precision=3):
     """生成并校验数值替换结果，保留其他内容、注释和布局，暂不写入。"""
     if any(isinstance(token, (yaml.tokens.AliasToken, yaml.tokens.AnchorToken))
            for token in yaml.scan(original)):
@@ -239,7 +263,7 @@ def prepare_scalar_updates(original, replacements, expected):
     for node, value in replacements:
         if not isinstance(node, ScalarNode) or not math.isfinite(value):
             raise ValueError('仅允许替换有限数值标量')
-        ranges.append((node.start_mark.index, node.end_mark.index, f'{value:.3f}'))
+        ranges.append((node.start_mark.index, node.end_mark.index, f'{value:.{precision}f}'))
     for start, end, value in sorted(ranges, reverse=True):
         updated = updated[:start] + value + updated[end:]
     if yaml.load(updated, Loader=UniqueKeyLoader) != expected:
@@ -327,6 +351,22 @@ def prepare_region_center(path, side, region_id, x, y):
         text, [(mapping_value(group.value[index], k), v) for k, v in values.items()], expected)
 
 
+def prepare_initial_pose(path, number, pose):
+    items = initial_pose_items(path)
+    if number not in items:
+        raise ValueError(f'找不到启动点 {number}')
+    if not all(math.isfinite(value) for value in (pose.x, pose.y, pose.yaw)):
+        raise ValueError('启动点位置和朝向必须为有限数值')
+    text, data, tree = read_document(path)
+    values = dict(lidar_init_x=pose.x, lidar_init_y=pose.y,
+                  lidar_init_qz=math.sin(pose.yaw / 2), lidar_init_qw=math.cos(pose.yaw / 2))
+    expected = deepcopy(data)
+    expected['poses'][number].update({key: round(value, 6) for key, value in values.items()})
+    node = mapping_value(mapping_value(tree, 'poses'), number)
+    return prepare_scalar_updates(
+        text, [(mapping_value(node, key), value) for key, value in values.items()], expected, precision=6)
+
+
 def update_point_xy(path, side, point_id, x, y):
     return path in commit_updates({path: prepare_point_xy(path, side, point_id, x, y)})
 
@@ -399,7 +439,7 @@ def run_mode(collector, path, is_region, timeout, workspace=None):
                 print('未开始采集，请重新选择。')
                 continue
             try:
-                paths = calibration_paths(workspace, is_region)
+                paths = calibration_paths(workspace, 'region' if is_region else 'point')
                 print('正在接收 10 条新位姿……', flush=True)
                 avg = collector.collect_next_average(timeout)
                 print(f'采集用时 {collector.elapsed:.2f}s；逐项去掉最大/最小值，剩余 8 条平均：'
@@ -427,6 +467,54 @@ def run_mode(collector, path, is_region, timeout, workspace=None):
                 print(f'本次标定未完成：{exc}')
 
 
+def run_initial_pose_mode(collector, path, timeout, workspace=None):
+    print('启动点使用 map 中的 base_footprint 位姿。请确认 GICP 已匹配成功、RViz 位姿正确。')
+    while True:
+        items = initial_pose_items(path)
+        print('\n ID       X          Y       朝向(度)  启动位置')
+        for number, pose in sorted(items.items()):
+            qz, qw = pose['lidar_init_qz'], pose['lidar_init_qw']
+            yaw = math.atan2(2 * qw * qz, qw * qw - qz * qz)
+            print(f'{number:3} {pose["lidar_init_x"]:10.3f} {pose["lidar_init_y"]:10.3f}'
+                  f' {math.degrees(yaw):10.2f}  {START_NAMES[number]}')
+        value = ask('选择启动点编号（1/2/3/4，b 返回，q 退出）：')
+        if value in ('q', 'quit', 'exit'):
+            raise KeyboardInterrupt
+        if value in ('b', 'back'):
+            return
+        try:
+            number = int(value)
+            if number not in items:
+                raise ValueError('编号不存在')
+        except ValueError as exc:
+            print(f'无法选择：{exc}')
+            continue
+        action = ask(f'已选 {number} {START_NAMES[number]}。将车放到启动位置并调整朝向，'
+                     '停稳后回车采集并保存 x/y/朝向，b 重新选择，q 退出：')
+        if action == 'q':
+            raise KeyboardInterrupt
+        if action == 'b':
+            continue
+        if action not in ('', 'y', 'yes'):
+            print('未开始采集，请重新选择。')
+            continue
+        try:
+            paths = calibration_paths(workspace, 'initial_pose')
+            print('正在接收 10 条新位姿……', flush=True)
+            avg = collector.collect_next_average(timeout)
+            updates = {target: prepare_initial_pose(target, number, avg) for target in paths}
+            changed = commit_updates(updates)
+            print(f'采集用时 {collector.elapsed:.2f}s；去极值平均：'
+                  f'X={avg.x:.6f}, Y={avg.y:.6f}, 朝向={math.degrees(avg.yaw):.2f}°；'
+                  f'qz={math.sin(avg.yaw / 2):.6f}, qw={math.cos(avg.yaw / 2):.6f}')
+            for target in paths:
+                print(f'{"已保存并校验" if target in changed else "位姿未变化"}：{target}')
+            print('两份源码启动点配置已更新。构建 odometry 后重启 Navigation2 与 odometry，'
+                  '并在 main_boot 选择对应编号。')
+        except (OSError, ValueError, RuntimeError, yaml.YAMLError) as exc:
+            print(f'本次标定未完成：{exc}')
+
+
 def main(args=None):
     import rclpy
     from rclpy.executors import SingleThreadedExecutor
@@ -448,7 +536,8 @@ def main(args=None):
         parser.error(str(exc))
     print('================ chairman_lidar 点位标定 ================')
     print(f'采集：{options.topic}（map 位姿）；每批 10 条，去掉最大/最小值后平均。')
-    print(f'定点文件：{points}\n区域文件：{regions}')
+    initial_poses = workspace / INITIAL_POSES_PATH
+    print(f'定点文件：{points}\n区域文件：{regions}\n启动点文件：{initial_poses}')
     print('保存时同时更新 src/function 中的对应源码配置，不修改 install。')
     print('请先启动导航与 odometry，等待定位就绪。每次采集前将机器人停稳。')
     rclpy.init(args=argv[1:], signal_handler_options=SignalHandlerOptions.NO)
@@ -464,7 +553,8 @@ def main(args=None):
         worker = threading.Thread(target=executor.spin, name='point_pose_receiver', daemon=True)
         worker.start()
         while rclpy.ok():
-            print('\n1：区域中心标定（中心±0.6m）  2：固定点标定（仅 x/y）  q：退出')
+            print('\n1：区域中心标定（中心±0.6m）  2：固定点标定（仅 x/y）'
+                  '  3：启动点标定（x/y/朝向）  q：退出')
             choice = ask('选择模式：')
             if choice == 'q':
                 break
@@ -473,6 +563,8 @@ def main(args=None):
                     run_mode(collector, regions, True, options.timeout, workspace)
                 elif choice == '2':
                     run_mode(collector, points, False, options.timeout, workspace)
+                elif choice == '3':
+                    run_initial_pose_mode(collector, initial_poses, options.timeout, workspace)
                 else:
                     print('输入无效。')
             except (OSError, ValueError, yaml.YAMLError) as exc:

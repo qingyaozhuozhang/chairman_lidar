@@ -2,7 +2,7 @@
 
 面向 BR 建筑机器人的 ROS 2 实车定位与导航工程，集成 Livox MID360、FAST-LIO、small_gicp 地图配准和 Nav2 全向运动控制。工程统一管理场地选择、设备通信、导航启动、按需任务及配置同步。
 
-定位链路由 `small_gicp_relocalization_node` 对实时点云与点云地图进行配准，发布 `map1 → odom1`；`tf_relay_node` 将该变换转发为 Nav2 使用的 `map → odom`。地图、初始位姿、底盘限制应与实际机器人及场地一致。
+定位链路由 `small_gicp_relocalization_node` 根据所选启动点初始化，对实时点云与点云地图进行配准，并持续发布 Nav2 使用的 `map → odom`。地图、初始位姿、底盘限制应与实际机器人及场地一致。
 
 | 文档 | 内容 |
 |---|---|
@@ -24,6 +24,7 @@ chairman_lidar/
 │   │   ├── fishbot_navigation2/         # Nav2 启动基准与 RViz 配置
 │   │   ├── livox_ros_driver2/           # 雷达网络配置
 │   │   ├── odometry/                   # 场地初始位姿与区域边界
+│   │   ├── small_gicp_relocalization/   # 点云地图坐标变换、配准与 TF 参数
 │   │   ├── manifest.json               # 中央配置到功能包文件的映射
 │   │   └── sync.py                     # 参数同步配置文件
 │   ├── fishbot/                        # 驱动、定位、导航及消息接口
@@ -132,10 +133,11 @@ source install/setup.bash
 | MID360 网络 | `src/config/livox_ros_driver2/MID360_config.json` | 雷达 IP、主机接收 IP，与实际网卡设置一致 |
 | 雷达与 IMU 配置 | `src/config/fast_lio/mid360.yaml` | 输入话题、滤波参数、安装外参 |
 | Nav2 基础配置 | `src/config/fishbot_navigation2/nav2_params.yaml` | 机器人尺寸、控制器、代价地图等参数 |
-| 场地初始位姿与区域 | `src/config/odometry/initial_poses.yaml`、`src/config/odometry/regions.yaml` | 4 个场地的初始位姿及红蓝区域边界 |
+| 建图点、场地初始位姿与区域 | `src/config/odometry/initial_poses.yaml`、`src/config/odometry/regions.yaml` | PCD 建图原点、4 个场地的启动位姿及红蓝区域边界 |
+| GICP 地图降采样 | `tool/downsample_map.py` | `GLOBAL_LEAF_SIZE` 为离线地图体素边长，默认 0.05 m；处理 `base.pcd` 生成 `final.pcd` |
 | 定点与任务模式 | `src/config/framework/on_demand/` | 红蓝点位、特殊任务、三种速度模式及特殊运动控制参数 |
 | 下位机通信 | `src/function/detail/continuous/micro_ros/config/boot.yaml` | 默认使用本项目 Agent；UDP IPv4 监听端口 8888 及可选外部工作空间 |
-| 地图和机器人模型 | `src/config/fishbot_navigation2/rviz`和`src/fishbot/fishbot_navigation/urdf` | 当前加载 `src/fishbot/fisbot_navigation/maps/room.yaml`、`src/fishbot/fishbot_navigation/PCD/scans.pcd`；核对 URDF、TF 安装偏移和扫描范围 |
+| 地图和机器人模型 | `src/config/fishbot_navigation2/rviz`和`src/fishbot/fishbot_navigation/urdf` | 当前加载 `src/fishbot/fisbot_navigation/maps/room.yaml`、`src/fishbot/fishbot_navigation2/PCD/final.pcd`；核对 URDF、TF 安装偏移和扫描范围 |
 
 **注：**
 - 凡是在中央参数配置文件`src/config`进行操作的都需要使用`sync`文件进行同步（具体参数文件使用说明见[参数修改说明](docs/parameter_modification.md)）
@@ -167,9 +169,13 @@ ros2 run configuration main_boot
 | Micro ROS Agent | `ros2 run micro_ros agent` | UDP IPv4 通信，默认监听 8888 端口 |
 | Navigation2 | `ros2 launch fishbot_navigation2 navigation2.launch.py` | 雷达、FAST-LIO、地形分析、Nav2、RViz 等导航服务 |
 | Function sum | `ros2 run framework sum` | 功能选择与执行 |
-| Odometry | `ros2 run odometry odometry` | 地图位姿输出、初始位姿发布与区域检测 |
+| Odometry | `ros2 run odometry odometry` | 地图位姿输出与区域检测 |
 
-导航 launch 同时启动 C++ 节点 `tf_relay_node`：源 TF 就绪前发布配置的初始变换，之后以 20 Hz 转发最近一次 `map1 → odom1`，输出时间戳为当前 ROS 时间加 0.1 s。独立入口为 `ros2 run small_gicp_relocalization tf_relay_node`。程序运行后需要等待点云配准成功（在`Navigation2`终端中显示`small_gicp_relocalization`语句即可）
+导航 launch 读取 odometry 包内的 `initial_poses.yaml`：`mapping_pose` 保存 PCD 建图原点在 `map` 中的位姿，转换为固定的 `map_to_pcd`；`poses` 中的 1～4 号保存底盘启动位姿，由 `SELECTED_POSE` 选择。定位节点等待本次 FAST-LIO 的局部里程计 TF，结合两组位姿计算配准初值，同时发布初始 `map → odom`。首次配准成功后，以有效匹配结果持续修正该变换。同一份 PCD 切换启动点时，`mapping_pose` 保持不变。
+
+建图点初值采用 1 号点，定义 PCD 的零位姿。选择其他启动点时，先计算它相对建图点的位置与朝向用于初始化配准；输出端以所选启动点为地图参考，将 GICP 结果转换到该参考系后映射回 `map`。建图点独立保存，修改 1～4 号启动点不会自动改变地图原点。
+
+`small_gicp_relocalization_node` 是 `map → odom` 的唯一发布者，默认以 20 Hz 发布，时间戳为当前 ROS 时间加 0.1 s。Navigation2 终端中的 `[定位初始化]` 表示初始 TF 已建立；出现 `[定位就绪] GICP 配准成功` 才表示首次匹配成功，确认 RViz 中的位置和朝向正确后再执行导航。odometry 默认不自动发布 `/initialpose`；RViz 的 `2D Pose Estimate` 可手动重新初始化 GICP。
 
 导航服务统一调用 `src/fishbot/fishbot_navigation2/launch/navigation2.launch.py`。`sum` 只使用已选场地对应的红/蓝点位和区域，不弹出第二次场地选择。
 
@@ -295,14 +301,17 @@ ros2 run tool get_pose
 ros2 run tool point
 ```
 
-先启动导航和 `odometry`，等待 map 位姿就绪。在菜单中选择区域/固定点、红蓝半场和编号，将机器人停稳后按回车，即采集并保存当前点位。可连续选择下一点，无需重启工具。
+先启动导航和 `odometry`，等待 GICP 匹配成功并核对 RViz 地图位姿。在菜单中选择区域、固定点或启动点，将机器人停稳后按回车，即采集并保存当前位姿。区域/固定点需选择红蓝半场和编号；启动点先选菜单 `3`，再选启动编号 1～4，并将车头调整到实际启动朝向。可连续选择下一点，无需重启工具。
 
-工具直接订阅 `/odom_map`（`custom_msg/msg/PoseEuler`），不读取 `/rosout` 日志，也不把 FAST-LIO 原始 `/Odometry` 坐标直接写成地图点位。每次取确认后收到的 **10 条有效消息**，x/y/z 分别去掉一个最大值和一个最小值，用剩余 8 个求平均；yaw 先处理 ±π 环绕再去极值。只把平均 x/y 写入配置，采集速度取决于实际话题频率（例如 10 Hz 约 1 秒），不会等待日志节流周期。默认 5 秒超时，消息不足时不写入。
+工具直接订阅 `/odom_map`（`custom_msg/msg/PoseEuler`），不读取 `/rosout` 日志，也不把 FAST-LIO 原始 `/Odometry` 坐标直接写成地图点位。每次取确认后收到的 **10 条有效消息**，x/y/z 分别去掉一个最大值和一个最小值，用剩余 8 个求平均；yaw 先处理 ±π 环绕再去极值。固定点和区域只使用平均 x/y，启动点还将平均 yaw 转成 qz/qw 写入配置。采集速度取决于实际话题频率（例如 10 Hz 约 1 秒），不会等待日志节流周期。默认 5 秒超时，消息不足时不写入。
 
 | 模式 | 写入位置 | 修改内容与生效方式 |
 |---|---|---|
 | 固定点 | `src/config/framework/on_demand/points.yaml` 与 `src/function/config/on_demand/points.yaml` | 两份文件中同一半场、同一编号的 x/y 同时更新，保留各自的 qz/qw、名称与模式；15/16 为动态目标。|
 | 区域中心 | `src/config/odometry/regions.yaml` 与 `src/function/detail/continuous/odometry/config/regions.yaml` | 两份文件中同一半场、同一编号的正方形边界同时更新为中心±0.6 m。|
+| 启动点 | `src/config/odometry/initial_poses.yaml` 与 `src/function/detail/continuous/odometry/config/initial_poses.yaml` | 同时更新所选编号的 `lidar_init_x/y/qz/qw`，保留其他启动点和注释。构建 `odometry` 后，重启 Navigation2 与 odometry。|
+
+标定只写两份源码配置，不写 `install`，不创建备份目录。启动点采集依赖正确的地图定位：可从已能正确定位的位置启动，再移动到待记录的启动点。尚未配准成功时，显示的初始估计不能用于验证或重新标定自身。
 
 工具根据自身路径定位工程，也可用 `--workspace /项目根目录` 指定；`--timeout 10` 调整超时，`--topic /odom_map` 指定同类型的 map 位姿话题。`POINT_WORKSPACE` 环境变量也可指定工程。
 
@@ -310,11 +319,25 @@ ros2 run tool point
 
 ### 地图降采样
 
+在工程根目录运行：
+
 ```bash
-ros2 run tool downsample_map input.pcd output.pcd --voxel-size 0.1
+python3 tool/downsample_map.py
+colcon build --packages-select fishbot_navigation2
+source install/setup.bash
 ```
 
-`input.pcd` 是现有输入文件；`output.pcd` 是输出文件，父目录须存在；`--voxel-size` 是体素边长，单位米，默认 0.1，必须为正有限数。相对路径以当前终端目录为准，输入输出不能相同。需要 Open3D。`--help` 可查看用法。原始地图路径可使用 `src/fishbot/fishbot_navigation2/PCD/scans.pcd`。
+默认读取 `src/fishbot/fishbot_navigation2/PCD/base.pcd`，生成同目录的 `final.pcd`。`base.pcd` 保留原始地图，导航 launch 加载安装目录中的 `PCD/final.pcd`；原始地图不安装到运行包。更新地图后需重新构建 `fishbot_navigation2` 并重启 Navigation2。
+
+`tool/downsample_map.py` 中的 `GLOBAL_LEAF_SIZE = 0.05` 是地图体素边长，单位 m，也可用 `--global-leaf-size 0.05` 临时指定。脚本使用固定在 PCD 原点的格网，每个占用体素保留全部有效点的 XYZ 质心，不改变地图坐标系。依赖 NumPy 和 Open3D；Open3D 用于 PCD 读写。可通过 `ros2 run tool downsample_map` 调用已构建安装的工具，或显式指定其他文件：
+
+```bash
+python3 tool/downsample_map.py input.pcd output.pcd --global-leaf-size 0.05
+```
+
+自定义路径相对于当前终端目录，输入输出必须不同，输出目录须存在。输出为二进制 XYZ PCD，并在文件头注释 `chairman_lidar_voxel_size` 中记录体素边长；GICP 使用 XYZ 并重新计算协方差，不使用原始文件中的 intensity、normal 或 curvature 字段。脚本写入完成后才替换输出文件，输入地图始终保留。
+
+GICP 直接使用离线地图，不再对地图降采样。FAST-LIO 保持原有输出；GICP 从 `final.pcd` 文件头读取体素边长，用相同尺度与每格质心规则处理实时点云，再进行配准，不需要单独配置实时体素参数。地图读取、搜索树建立和协方差计算仍需执行，实际耗时可查看 `[地图就绪]` 日志。离线降采样不改变 `mapping_pose` 或启动点的坐标含义。
 
 ## 6. 新功能、新参数从哪里加
 
