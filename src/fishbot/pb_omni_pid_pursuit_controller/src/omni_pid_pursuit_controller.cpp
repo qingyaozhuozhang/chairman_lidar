@@ -607,7 +607,11 @@ void OmniPidPursuitController::applyApproachVelocityScaling(
   if (std::abs(linear_vel_x) <= kTinyVelocity && std::abs(linear_vel_y) <= kTinyVelocity) {
     return;
   }
-
+  double distance_to_goal = 0.0;
+  if (!path.poses.empty()) {
+    const auto & last = path.poses.back();
+    distance_to_goal = std::hypot(last.pose.position.x, last.pose.position.y);
+  }
   // 仍然保留接近目标时的路径长度比例约束，但比例约束之后不能低于实车最小可驱动速度。
   // 最终停止不靠速度自然衰减，而是在 computeVelocityCommands() 开头进入目标容差后直接返回 0。
   const double velocity_scaling = approachVelocityScalingFactor(path);
@@ -617,11 +621,13 @@ void OmniPidPursuitController::applyApproachVelocityScaling(
   }
 
   // 未进入最终目标容差时，强制保持最小可驱动速度，避免 0.001/0.002m/s 这种无意义蠕动。
-  if (std::abs(linear_vel_x) > kTinyVelocity && std::abs(linear_vel_x) < min_approach_linear_velocity_) {
-    linear_vel_x = std::copysign(min_approach_linear_velocity_, linear_vel_x);
-  }
-  if (std::abs(linear_vel_y) > kTinyVelocity && std::abs(linear_vel_y) < min_approach_linear_velocity_) {
-    linear_vel_y = std::copysign(min_approach_linear_velocity_, linear_vel_y);
+  if (distance_to_goal > 0.3) {
+    if (std::abs(linear_vel_x) > kTinyVelocity && std::abs(linear_vel_x) < min_approach_linear_velocity_) {
+      linear_vel_x = std::copysign(min_approach_linear_velocity_, linear_vel_x);
+    }
+    if (std::abs(linear_vel_y) > kTinyVelocity && std::abs(linear_vel_y) < min_approach_linear_velocity_) {
+      linear_vel_y = std::copysign(min_approach_linear_velocity_, linear_vel_y);
+    }
   }
 }
 
