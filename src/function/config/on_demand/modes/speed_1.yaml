@@ -34,10 +34,10 @@ parameters:
         plugin: "pb_omni_pid_pursuit_controller::OmniPidPursuitController"  # 启动项
 
         # 平移 PID
-        translation_kpx: 3.0
+        translation_kpx: 5.0
         translation_kix: 0.0
         translation_kdx: 0.0
-        translation_kpy: 3.0
+        translation_kpy: 5.0
         translation_kiy: 0.0
         translation_kdy: 0.0
 
@@ -52,7 +52,7 @@ parameters:
 
         # 路径跟踪前瞻距离：单位 m；lookahead_time 单位 s。
         lookahead_dist: 0.3
-        use_velocity_scaled_lookahead_dist: true
+        use_velocity_scaled_lookahead_dist: False
         lookahead_time: 0.5
         min_lookahead_dist: 0.15
         max_lookahead_dist: 1.2
@@ -67,15 +67,15 @@ parameters:
         min_approach_angular_velocity: 0.05
         # 最小角速度补偿的朝向误差门槛（弧度）
         min_approach_angular_velocity_tolerance: 0.01
-        approach_velocity_scaling_dist: 0.3
+        approach_velocity_scaling_dist: 0.9
 
         # 全向轮速度限制
-        v_linear_minx: -1.0
-        v_linear_maxx: 1.0
-        v_linear_miny: -1.0
-        v_linear_maxy: 1.0
-        v_angular_min: -1.0
-        v_angular_max: 1.0
+        v_linear_minx: -1.5
+        v_linear_maxx: 1.5
+        v_linear_miny: -1.5
+        v_linear_maxy: 1.5
+        v_angular_min: -1.5
+        v_angular_max: 1.5
 
         # 根据路径曲率动态减速
         curvature_min: 0.4
@@ -91,10 +91,10 @@ parameters:
       smoothing_frequency: 20.0
       scale_velocities: False  # 启动项
       feedback: "OPEN_LOOP"
-      max_velocity: [1.0, 1.0, 1.0]
-      min_velocity: [-1.0, -1.0, -1.0]
-      max_accel: [0.5, 0.5, 1.0]
-      max_decel: [-0.5, -0.5, -1.0]
+      max_velocity: [3.0, 3.0, 2.5]
+      min_velocity: [-3.0, -3.0, -2.5]
+      max_accel: [6.0, 6.0, 3.5]
+      max_decel: [-7.0, -7.0, -4.0]
       odom_topic: "odom"
       odom_duration: 0.1
       deadband_velocity: [0.0, 0.0, 0.0]
