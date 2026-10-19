@@ -136,7 +136,18 @@ void OmniPidPursuitController::configure(
     node, plugin_name_ + ".curvature_backward_dist", rclcpp::ParameterValue(0.3));
   declare_parameter_if_not_declared(
     node, plugin_name_ + ".max_velocity_scaling_factor_rate", rclcpp::ParameterValue(0.9));
-
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".mid_distance", rclcpp::ParameterValue(0.60));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".last_distance", rclcpp::ParameterValue(0.10));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".mid_speed", rclcpp::ParameterValue(0.45));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".last_speed", rclcpp::ParameterValue(0.05));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".low_speed_threshold", rclcpp::ParameterValue(0.35));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".max_decel_step", rclcpp::ParameterValue(0.02));
   node->get_parameter(plugin_name_ + ".translation_kpx", translation_kp_x);
   node->get_parameter(plugin_name_ + ".translation_kix", translation_ki_x);
   node->get_parameter(plugin_name_ + ".translation_kdx", translation_kd_x);
@@ -203,7 +214,12 @@ void OmniPidPursuitController::configure(
     plugin_name_ + ".max_velocity_scaling_factor_rate", max_velocity_scaling_factor_rate_);
 
   node->get_parameter("controller_frequency", control_frequency);
-
+  node->get_parameter(plugin_name_ + ".mid_distance", mid_distance_);
+  node->get_parameter(plugin_name_ + ".last_distance", last_distance_);
+  node->get_parameter(plugin_name_ + ".mid_speed", mid_speed_);
+  node->get_parameter(plugin_name_ + ".last_speed", last_speed_);
+  node->get_parameter(plugin_name_ + ".low_speed_threshold", low_speed_threshold_);
+  node->get_parameter(plugin_name_ + ".max_decel_step", max_decel_step_);
   transform_tolerance_ = tf2::durationFromSec(transform_tolerance);
   control_duration_ = 1.0 / control_frequency;
 
@@ -352,35 +368,9 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
   applyCurvatureLimitation(transformed_plan, carrot_pose, lin_vel_x, lin_vel_y);
 
   applyApproachVelocityScaling(transformed_plan, lin_vel_x, lin_vel_y);
-  double dist_to_final_goal = 999.0;
-  if (!global_plan_.poses.empty()) {
-    geometry_msgs::msg::PoseStamped goal_in_base;
-    if (transformPose(costmap_ros_->getBaseFrameID(), global_plan_.poses.back(), goal_in_base)) {
-      dist_to_final_goal = std::hypot(goal_in_base.pose.position.x, goal_in_base.pose.position.y);
-    }
-  }
+  
+  applyLowSpeedDecelLimit(carrot_pose, lin_vel_x, lin_vel_y);
 
-  if (dist_to_final_goal < 0.015) {
-    lin_vel_x = 0.0;
-    lin_vel_y = 0.0;
-    is_direction_latched_ = false; 
-  } else if (dist_to_final_goal <= 0.10) {
-    if (!is_direction_latched_) {
-      double current_v = std::hypot(lin_vel_x, lin_vel_y);
-      if (current_v > 1e-4) {
-        latched_ux_ = lin_vel_x / current_v;
-        latched_uy_ = lin_vel_y / current_v;
-        latched_speed_ = std::max(current_v, 0.05); 
-        is_direction_latched_ = true;
-      }
-    }
-    if (is_direction_latched_) {
-      lin_vel_x = latched_speed_ * latched_ux_;
-      lin_vel_y = latched_speed_ * latched_uy_;
-    }
-  } else {
-    is_direction_latched_ = false;
-  }
   // Transform local frame to global frame to use in collision checking
   nav_msgs::msg::Path costmap_frame_local_plan;
 
@@ -742,6 +732,65 @@ double OmniPidPursuitController::calculateCurvatureRadius(
   }
   return radius;
 }
+void OmniPidPursuitController::applyLowSpeedDecelLimit(
+  const geometry_msgs::msg::PoseStamped & carrot_pose,
+  double & lin_vel_x, double & lin_vel_y)
+{
+  double dist_to_final_goal = 999.0;
+  if (!global_plan_.poses.empty()) {
+    geometry_msgs::msg::PoseStamped goal_in_base;
+    if (transformPose(costmap_ros_->getBaseFrameID(), global_plan_.poses.back(), goal_in_base)) {
+      dist_to_final_goal = std::hypot(goal_in_base.pose.position.x, goal_in_base.pose.position.y);
+    }
+  }
+
+  if (dist_to_final_goal < 0.005) { 
+    lin_vel_x = 0.0;
+    lin_vel_y = 0.0;
+  } else if (dist_to_final_goal <= last_distance_) {
+    double dx = carrot_pose.pose.position.x;
+    double dy = carrot_pose.pose.position.y;
+    double dist_to_carrot = std::hypot(dx, dy);
+    const double fixed_speed = last_speed_; 
+    if (dist_to_carrot > 1e-4) {
+      lin_vel_x = fixed_speed * (dx / dist_to_carrot);
+      lin_vel_y = fixed_speed * (dy / dist_to_carrot);
+    } else {
+      lin_vel_x = 0.0;
+      lin_vel_y = 0.0;
+    }
+  } else if (dist_to_final_goal <= mid_distance_) {
+    double dx = carrot_pose.pose.position.x;
+    double dy = carrot_pose.pose.position.y;
+    double dist_to_carrot = std::hypot(dx, dy);
+    double fixed_speed = last_speed_ + (dist_to_final_goal - last_distance_) / (mid_distance_ - last_distance_) * (mid_speed_ - last_speed_);
+    if (dist_to_carrot > 1e-4) {
+      lin_vel_x = fixed_speed * (dx / dist_to_carrot);
+      lin_vel_y = fixed_speed * (dy / dist_to_carrot);
+    } else {
+      lin_vel_x = 0.0;
+      lin_vel_y = 0.0;
+    }
+  } else {
+  }    
+  if (std::abs(last_pub_vel_x_) < low_speed_threshold_ &&
+      std::abs(lin_vel_x) < std::abs(last_pub_vel_x_)) {
+      double dv = std::abs(last_pub_vel_x_) - std::abs(lin_vel_x);
+      if (dv > max_decel_step_) {
+          lin_vel_x = std::copysign(std::abs(last_pub_vel_x_) - max_decel_step_, last_pub_vel_x_);
+      }
+  }
+  if (std::abs(last_pub_vel_y_) < low_speed_threshold_ &&
+      std::abs(lin_vel_y) < std::abs(last_pub_vel_y_)) {
+      double dv = std::abs(last_pub_vel_y_) - std::abs(lin_vel_y);
+      if (dv > max_decel_step_) {
+          lin_vel_y = std::copysign(std::abs(last_pub_vel_y_) - max_decel_step_, last_pub_vel_y_);
+      }
+  }
+
+  last_pub_vel_x_ = lin_vel_x;
+  last_pub_vel_y_ = lin_vel_y;
+}
 
 void OmniPidPursuitController::visualizeCurvaturePoints(
   const geometry_msgs::msg::PoseStamped & backward_pose,
@@ -913,7 +962,18 @@ rcl_interfaces::msg::SetParametersResult OmniPidPursuitController::dynamicParame
         curvature_backward_dist_ = parameter.as_double();
       } else if (name == plugin_name_ + ".max_velocity_scaling_factor_rate") {
         max_velocity_scaling_factor_rate_ = parameter.as_double();
-      }
+      } else if (name == plugin_name_ + ".mid_distance") {
+        mid_distance_ = parameter.as_double();
+      } else if (name == plugin_name_ + ".last_distance") {
+        last_distance_ = parameter.as_double();
+      } else if (name == plugin_name_ + ".mid_speed") {
+        mid_speed_ = parameter.as_double();
+      } else if (name == plugin_name_ + ".last_speed") {
+        last_speed_ = parameter.as_double();
+      } else if (name == plugin_name_ + ".low_speed_threshold") {
+        low_speed_threshold_ = parameter.as_double();
+      } else if (name == plugin_name_ + ".max_decel_step") {
+        max_decel_step_ = parameter.as_double();
     } else if (type == ParameterType::PARAMETER_BOOL) {
       if (name == plugin_name_ + ".enable_rotation") {
         enable_rotation_ = parameter.as_bool();

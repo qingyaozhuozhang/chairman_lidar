@@ -85,6 +85,14 @@ parameters:
         curvature_backward_dist: 0.3
         max_velocity_scaling_factor_rate: 0.9
 
+        #末端减速
+        mid_distance : 0.60
+        last_distance : 0.10
+        mid_speed : 0.45
+        last_speed : 0.05
+        low_speed_threshold : 0.35
+        max_decel_step : 0.02
+
   velocity_smoother:
     ros__parameters:
       use_sim_time: True  # 启动项

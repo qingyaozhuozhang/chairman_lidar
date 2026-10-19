@@ -115,6 +115,8 @@ private:
   geometry_msgs::msg::PoseStamped findPoseAtDistance(
     const nav_msgs::msg::Path & path, const std::vector<double> & cumulative_distances,
     double target_distance) const;
+  void applyLowSpeedDecelLimit(
+    const geometry_msgs::msg::PoseStamped & carrot_pose, double & lin_vel_x, double & lin_vel_y);
 
 private:
   rclcpp_lifecycle::LifecycleNode::WeakPtr node_;
@@ -134,11 +136,13 @@ private:
   std::shared_ptr<PID> move_pid_x;
   std::shared_ptr<PID> move_pid_y;
   std::shared_ptr<PID> heading_pid_;
-  // 末端 10cm 方向锁存与固定速度
-  bool is_direction_latched_{false};
-  double latched_ux_{0.0};
-  double latched_uy_{0.0};
-  double latched_speed_{0.0};
+  // 末端速度
+  double mid_distance_;
+  double last_distance_;
+  double mid_speed_;
+  double last_speed_;
+  double low_speed_threshold_;
+  double max_decel_step_;
 
   // 平动 PID 参数（x/y 独立）
   double translation_kp_x, translation_ki_x, translation_kd_x;
@@ -160,7 +164,8 @@ private:
   double max_lookahead_dist_;
   double lookahead_time_;
   bool use_interpolation_;
-
+  double last_pub_vel_x_{0.0};
+  double last_pub_vel_y_{0.0};
   // 朝向控制
   bool use_rotate_to_heading_;
   bool rotate_to_goal_heading_only_;
