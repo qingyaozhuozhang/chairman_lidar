@@ -974,7 +974,9 @@ rcl_interfaces::msg::SetParametersResult OmniPidPursuitController::dynamicParame
         low_speed_threshold_ = parameter.as_double();
       } else if (name == plugin_name_ + ".max_decel_step") {
         max_decel_step_ = parameter.as_double();
-    } else if (type == ParameterType::PARAMETER_BOOL) {
+      }
+    } 
+    else if (type == ParameterType::PARAMETER_BOOL) {
       if (name == plugin_name_ + ".enable_rotation") {
         enable_rotation_ = parameter.as_bool();
       } else if (name == plugin_name_ + ".use_velocity_scaled_lookahead_dist") {

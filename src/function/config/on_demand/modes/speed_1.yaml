@@ -26,8 +26,8 @@ parameters:
       general_goal_checker:
         stateful: True
         plugin: "nav2_controller::SimpleGoalChecker"  # 启动项
-        xy_goal_tolerance: 0.03
-        yaw_goal_tolerance: 0.03
+        xy_goal_tolerance: 0.01
+        yaw_goal_tolerance: 0.01
 
       # 全向轮 PID 路径跟踪控制器
       FollowPath:
@@ -67,7 +67,7 @@ parameters:
         min_approach_angular_velocity: 0.05
         # 最小角速度补偿的朝向误差门槛（弧度）
         min_approach_angular_velocity_tolerance: 0.01
-        approach_velocity_scaling_dist: 0.7
+        approach_velocity_scaling_dist: 0.9
 
         # 全向轮速度限制
         v_linear_minx: -1.5
@@ -75,7 +75,7 @@ parameters:
         v_linear_miny: -1.5
         v_linear_maxy: 1.5
         v_angular_min: -1.5
-        v_angular_max: 1.5
+        v_angular_max: 2.0
 
         # 根据路径曲率动态减速
         curvature_min: 0.4
@@ -87,9 +87,9 @@ parameters:
 
         #末端减速
         mid_distance : 0.60
-        last_distance : 0.10
+        last_distance : 0.05
         mid_speed : 0.45
-        last_speed : 0.05
+        last_speed : 0.08
         low_speed_threshold : 0.35
         max_decel_step : 0.02
 
