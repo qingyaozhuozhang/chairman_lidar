@@ -52,11 +52,17 @@ void OmniPidPursuitController::configure(
   max_robot_pose_search_dist_ = getCostmapMaxExtent();
 
   declare_parameter_if_not_declared(
-    node, plugin_name_ + ".translation_kp", rclcpp::ParameterValue(3.0));
+    node, plugin_name_ + ".translation_kpx", rclcpp::ParameterValue(3.0));
   declare_parameter_if_not_declared(
-    node, plugin_name_ + ".translation_ki", rclcpp::ParameterValue(0.1));
+    node, plugin_name_ + ".translation_kix", rclcpp::ParameterValue(0.1));
   declare_parameter_if_not_declared(
-    node, plugin_name_ + ".translation_kd", rclcpp::ParameterValue(0.3));
+    node, plugin_name_ + ".translation_kdx", rclcpp::ParameterValue(0.3));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".translation_kpy", rclcpp::ParameterValue(3.0));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".translation_kiy", rclcpp::ParameterValue(0.1));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".translation_kdy", rclcpp::ParameterValue(0.3));
   declare_parameter_if_not_declared(
     node, plugin_name_ + ".enable_rotation", rclcpp::ParameterValue(true));
   declare_parameter_if_not_declared(
@@ -104,9 +110,13 @@ void OmniPidPursuitController::configure(
   declare_parameter_if_not_declared(
     node, plugin_name_ + ".approach_velocity_scaling_dist", rclcpp::ParameterValue(0.6));
   declare_parameter_if_not_declared(
-    node, plugin_name_ + ".v_linear_min", rclcpp::ParameterValue(-3.0));
+    node, plugin_name_ + ".v_linear_minx", rclcpp::ParameterValue(-3.0));
   declare_parameter_if_not_declared(
-    node, plugin_name_ + ".v_linear_max", rclcpp::ParameterValue(3.0));
+    node, plugin_name_ + ".v_linear_maxx", rclcpp::ParameterValue(3.0));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".v_linear_miny", rclcpp::ParameterValue(-3.0));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".v_linear_maxy", rclcpp::ParameterValue(3.0));
   declare_parameter_if_not_declared(
     node, plugin_name_ + ".v_angular_min", rclcpp::ParameterValue(-3.0));
   declare_parameter_if_not_declared(
@@ -126,10 +136,24 @@ void OmniPidPursuitController::configure(
     node, plugin_name_ + ".curvature_backward_dist", rclcpp::ParameterValue(0.3));
   declare_parameter_if_not_declared(
     node, plugin_name_ + ".max_velocity_scaling_factor_rate", rclcpp::ParameterValue(0.9));
-
-  node->get_parameter(plugin_name_ + ".translation_kp", translation_kp_);
-  node->get_parameter(plugin_name_ + ".translation_ki", translation_ki_);
-  node->get_parameter(plugin_name_ + ".translation_kd", translation_kd_);
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".mid_distance", rclcpp::ParameterValue(0.60));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".last_distance", rclcpp::ParameterValue(0.10));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".mid_speed", rclcpp::ParameterValue(0.45));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".last_speed", rclcpp::ParameterValue(0.05));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".low_speed_threshold", rclcpp::ParameterValue(0.35));
+  declare_parameter_if_not_declared(
+    node, plugin_name_ + ".max_decel_step", rclcpp::ParameterValue(0.02));
+  node->get_parameter(plugin_name_ + ".translation_kpx", translation_kp_x);
+  node->get_parameter(plugin_name_ + ".translation_kix", translation_ki_x);
+  node->get_parameter(plugin_name_ + ".translation_kdx", translation_kd_x);
+  node->get_parameter(plugin_name_ + ".translation_kpy", translation_kp_y);
+  node->get_parameter(plugin_name_ + ".translation_kiy", translation_ki_y);
+  node->get_parameter(plugin_name_ + ".translation_kdy", translation_kd_y);
   node->get_parameter(plugin_name_ + ".enable_rotation", enable_rotation_);
   node->get_parameter(plugin_name_ + ".rotation_kp", rotation_kp_);
   node->get_parameter(plugin_name_ + ".rotation_ki", rotation_ki_);
@@ -173,8 +197,10 @@ void OmniPidPursuitController::configure(
       "approach_velocity_scaling_dist is larger than forward costmap extent, "
       "leading to permanent slowdown");
   }
-  node->get_parameter(plugin_name_ + ".v_linear_max", v_linear_max_);
-  node->get_parameter(plugin_name_ + ".v_linear_min", v_linear_min_);
+  node->get_parameter(plugin_name_ + ".v_linear_maxx", v_linear_max_x);
+  node->get_parameter(plugin_name_ + ".v_linear_minx", v_linear_min_x);
+  node->get_parameter(plugin_name_ + ".v_linear_maxy", v_linear_max_y);
+  node->get_parameter(plugin_name_ + ".v_linear_miny", v_linear_min_y);
   node->get_parameter(plugin_name_ + ".v_angular_max", v_angular_max_);
   node->get_parameter(plugin_name_ + ".v_angular_min", v_angular_min_);
   node->get_parameter(plugin_name_ + ".max_robot_pose_search_dist", max_robot_pose_search_dist_);
@@ -188,7 +214,12 @@ void OmniPidPursuitController::configure(
     plugin_name_ + ".max_velocity_scaling_factor_rate", max_velocity_scaling_factor_rate_);
 
   node->get_parameter("controller_frequency", control_frequency);
-
+  node->get_parameter(plugin_name_ + ".mid_distance", mid_distance_);
+  node->get_parameter(plugin_name_ + ".last_distance", last_distance_);
+  node->get_parameter(plugin_name_ + ".mid_speed", mid_speed_);
+  node->get_parameter(plugin_name_ + ".last_speed", last_speed_);
+  node->get_parameter(plugin_name_ + ".low_speed_threshold", low_speed_threshold_);
+  node->get_parameter(plugin_name_ + ".max_decel_step", max_decel_step_);
   transform_tolerance_ = tf2::durationFromSec(transform_tolerance);
   control_duration_ = 1.0 / control_frequency;
 
@@ -199,9 +230,12 @@ void OmniPidPursuitController::configure(
       ->create_publisher<visualization_msgs::msg::MarkerArray>(  // 初始化 MarkerArray Publisher
         "curvature_points_marker_array", rclcpp::QoS(10));
 
-  move_pid_ = std::make_shared<PID>(
-    control_duration_, v_linear_max_, v_linear_min_, translation_kp_, translation_kd_,
-    translation_ki_);
+  move_pid_x = std::make_shared<PID>(
+    control_duration_, v_linear_max_x, v_linear_min_x, translation_kp_x, translation_kd_x,
+    translation_ki_x);
+  move_pid_y = std::make_shared<PID>(
+    control_duration_, v_linear_max_y, v_linear_min_y, translation_kp_y, translation_kd_y,
+    translation_ki_y);
   heading_pid_ = std::make_shared<PID>(
     control_duration_, v_angular_max_, v_angular_min_, rotation_kp_, rotation_kd_, rotation_ki_);
 }
@@ -279,8 +313,8 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
   auto carrot_pose = getLookAheadPoint(lookahead_dist, transformed_plan);
   carrot_pub_->publish(createCarrotMsg(carrot_pose));
 
-  double lin_dist = hypot(carrot_pose.pose.position.x, carrot_pose.pose.position.y);
-  double theta_dist = atan2(carrot_pose.pose.position.y, carrot_pose.pose.position.x);
+  double lin_dist_x = carrot_pose.pose.position.x;
+  double lin_dist_y = carrot_pose.pose.position.y;
 
   // angle_to_goal 在 base_footprint 坐标系下表示“当前车头到目标车头”的 yaw 误差。
   // 默认 pure-pursuit 会拿 carrot/path pose 的 orientation 做角度目标；NavfnPlanner 生成的
@@ -302,7 +336,8 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
     }
   }
 
-  auto lin_vel = move_pid_->calculate(lin_dist, 0);
+  auto lin_vel_x = move_pid_x->calculate(lin_dist_x, 0);
+  auto lin_vel_y = move_pid_y->calculate(lin_dist_y, 0);
   double angular_vel = 0.0;
   bool heading_hold_active = false;
 
@@ -330,9 +365,11 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
     }
   }
 
-  applyCurvatureLimitation(transformed_plan, carrot_pose, lin_vel);
+  applyCurvatureLimitation(transformed_plan, carrot_pose, lin_vel_x, lin_vel_y);
 
-  applyApproachVelocityScaling(transformed_plan, lin_vel);
+  applyApproachVelocityScaling(transformed_plan, lin_vel_x, lin_vel_y);
+  
+  applyLowSpeedDecelLimit(carrot_pose, lin_vel_x, lin_vel_y);
 
   // Transform local frame to global frame to use in collision checking
   nav_msgs::msg::Path costmap_frame_local_plan;
@@ -347,8 +384,8 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
   }
 
   if (!isCollisionDetected(costmap_frame_local_plan)) {
-    cmd_vel.twist.linear.x = lin_vel * cos(theta_dist);
-    cmd_vel.twist.linear.y = lin_vel * sin(theta_dist);
+    cmd_vel.twist.linear.x = lin_vel_x;
+    cmd_vel.twist.linear.y = lin_vel_y;
     cmd_vel.twist.angular.z = angular_vel;
   } else {
     throw nav2_core::PlannerException("Collision detected in the trajectory. Stopping the robot!");
@@ -581,35 +618,45 @@ double OmniPidPursuitController::approachVelocityScalingFactor(
 }
 
 void OmniPidPursuitController::applyApproachVelocityScaling(
-  const nav_msgs::msg::Path & path, double & linear_vel) const
+  const nav_msgs::msg::Path & path, double & linear_vel_x, double & linear_vel_y) const
 {
   constexpr double kTinyVelocity = 1e-6;
 
-  if (linear_vel <= kTinyVelocity) {
+  if (std::abs(linear_vel_x) <= kTinyVelocity && std::abs(linear_vel_y) <= kTinyVelocity) {
     return;
   }
-
+  double distance_to_goal = 0.0;
+  if (!path.poses.empty()) {
+    const auto & last = path.poses.back();
+    distance_to_goal = std::hypot(last.pose.position.x, last.pose.position.y);
+  }
   // 仍然保留接近目标时的路径长度比例约束，但比例约束之后不能低于实车最小可驱动速度。
   // 最终停止不靠速度自然衰减，而是在 computeVelocityCommands() 开头进入目标容差后直接返回 0。
   const double velocity_scaling = approachVelocityScalingFactor(path);
   if (velocity_scaling < 1.0) {
-    linear_vel *= velocity_scaling;
+    linear_vel_x *= velocity_scaling;
+    linear_vel_y *= velocity_scaling;
   }
 
   // 未进入最终目标容差时，强制保持最小可驱动速度，避免 0.001/0.002m/s 这种无意义蠕动。
-  if (linear_vel > kTinyVelocity && linear_vel < min_approach_linear_velocity_) {
-    linear_vel = min_approach_linear_velocity_;
-  }
+  // if (distance_to_goal > 100.0) {
+  //   if (std::abs(linear_vel_x) > kTinyVelocity && std::abs(linear_vel_x) < min_approach_linear_velocity_) {
+  //     linear_vel_x = std::copysign(min_approach_linear_velocity_, linear_vel_x);
+  //   }
+  //   if (std::abs(linear_vel_y) > kTinyVelocity && std::abs(linear_vel_y) < min_approach_linear_velocity_) {
+  //     linear_vel_y = std::copysign(min_approach_linear_velocity_, linear_vel_y);
+  //   }
 }
 
 void OmniPidPursuitController::applyCurvatureLimitation(
   const nav_msgs::msg::Path & path, const geometry_msgs::msg::PoseStamped & lookahead_pose,
-  double & linear_vel)
+  double & linear_vel_x, double & linear_vel_y)
 {
   double curvature =
     calculateCurvature(path, lookahead_pose, curvature_forward_dist_, curvature_backward_dist_);
 
-  double scaled_linear_vel = linear_vel;
+  double scaled_linear_vel_x = linear_vel_x;
+  double scaled_linear_vel_y = linear_vel_y;
   if (curvature > curvature_min_) {
     double reduction_ratio = 1.0;
     if (curvature > curvature_max_) {
@@ -619,17 +666,24 @@ void OmniPidPursuitController::applyCurvatureLimitation(
                                 (1.0 - reduction_ratio_at_high_curvature_);
     }
 
-    double target_scaled_vel = linear_vel * reduction_ratio;
-    scaled_linear_vel =
-      last_velocity_scaling_factor_ + std::clamp(
-                                        target_scaled_vel - last_velocity_scaling_factor_,
+    double target_scaled_vel_x = linear_vel_x * reduction_ratio;
+    scaled_linear_vel_x =
+      last_velocity_scaling_factor_x + std::clamp(
+                                        target_scaled_vel_x - last_velocity_scaling_factor_x,
+                                        -max_velocity_scaling_factor_rate_ * control_duration_,
+                                        max_velocity_scaling_factor_rate_ * control_duration_);
+    double target_scaled_vel_y = linear_vel_y * reduction_ratio;
+    scaled_linear_vel_y =
+      last_velocity_scaling_factor_y + std::clamp(
+                                        target_scaled_vel_y - last_velocity_scaling_factor_y,
                                         -max_velocity_scaling_factor_rate_ * control_duration_,
                                         max_velocity_scaling_factor_rate_ * control_duration_);
   }
-  scaled_linear_vel = std::max(scaled_linear_vel, 2.0 * min_approach_linear_velocity_);
 
-  linear_vel = std::min(linear_vel, scaled_linear_vel);
-  last_velocity_scaling_factor_ = linear_vel;
+  linear_vel_x = std::min(linear_vel_x, scaled_linear_vel_x);
+  last_velocity_scaling_factor_x = linear_vel_x;
+  linear_vel_y = std::min(linear_vel_y, scaled_linear_vel_y);
+  last_velocity_scaling_factor_y = linear_vel_y;
 }
 
 double OmniPidPursuitController::calculateCurvature(
@@ -677,6 +731,65 @@ double OmniPidPursuitController::calculateCurvatureRadius(
     return 1e9;
   }
   return radius;
+}
+void OmniPidPursuitController::applyLowSpeedDecelLimit(
+  const geometry_msgs::msg::PoseStamped & carrot_pose,
+  double & lin_vel_x, double & lin_vel_y)
+{
+  double dist_to_final_goal = 999.0;
+  if (!global_plan_.poses.empty()) {
+    geometry_msgs::msg::PoseStamped goal_in_base;
+    if (transformPose(costmap_ros_->getBaseFrameID(), global_plan_.poses.back(), goal_in_base)) {
+      dist_to_final_goal = std::hypot(goal_in_base.pose.position.x, goal_in_base.pose.position.y);
+    }
+  }
+
+  if (dist_to_final_goal < 0.005) { 
+    lin_vel_x = 0.0;
+    lin_vel_y = 0.0;
+  } else if (dist_to_final_goal <= last_distance_) {
+    double dx = carrot_pose.pose.position.x;
+    double dy = carrot_pose.pose.position.y;
+    double dist_to_carrot = std::hypot(dx, dy);
+    const double fixed_speed = last_speed_; 
+    if (dist_to_carrot > 1e-4) {
+      lin_vel_x = fixed_speed * (dx / dist_to_carrot);
+      lin_vel_y = fixed_speed * (dy / dist_to_carrot);
+    } else {
+      lin_vel_x = 0.0;
+      lin_vel_y = 0.0;
+    }
+  } else if (dist_to_final_goal <= mid_distance_) {
+    double dx = carrot_pose.pose.position.x;
+    double dy = carrot_pose.pose.position.y;
+    double dist_to_carrot = std::hypot(dx, dy);
+    double fixed_speed = last_speed_ + (dist_to_final_goal - last_distance_) / (mid_distance_ - last_distance_) * (mid_speed_ - last_speed_);
+    if (dist_to_carrot > 1e-4) {
+      lin_vel_x = fixed_speed * (dx / dist_to_carrot);
+      lin_vel_y = fixed_speed * (dy / dist_to_carrot);
+    } else {
+      lin_vel_x = 0.0;
+      lin_vel_y = 0.0;
+    }
+  } else {
+  }    
+  if (std::abs(last_pub_vel_x_) < low_speed_threshold_ &&
+      std::abs(lin_vel_x) < std::abs(last_pub_vel_x_)) {
+      double dv = std::abs(last_pub_vel_x_) - std::abs(lin_vel_x);
+      if (dv > max_decel_step_) {
+          lin_vel_x = std::copysign(std::abs(last_pub_vel_x_) - max_decel_step_, last_pub_vel_x_);
+      }
+  }
+  if (std::abs(last_pub_vel_y_) < low_speed_threshold_ &&
+      std::abs(lin_vel_y) < std::abs(last_pub_vel_y_)) {
+      double dv = std::abs(last_pub_vel_y_) - std::abs(lin_vel_y);
+      if (dv > max_decel_step_) {
+          lin_vel_y = std::copysign(std::abs(last_pub_vel_y_) - max_decel_step_, last_pub_vel_y_);
+      }
+  }
+
+  last_pub_vel_x_ = lin_vel_x;
+  last_pub_vel_y_ = lin_vel_y;
 }
 
 void OmniPidPursuitController::visualizeCurvaturePoints(
@@ -778,12 +891,18 @@ rcl_interfaces::msg::SetParametersResult OmniPidPursuitController::dynamicParame
     const auto & name = parameter.get_name();
 
     if (type == ParameterType::PARAMETER_DOUBLE) {
-      if (name == plugin_name_ + ".translation_kp") {
-        translation_kp_ = parameter.as_double();
-      } else if (name == plugin_name_ + ".translation_ki") {
-        translation_ki_ = parameter.as_double();
-      } else if (name == plugin_name_ + ".translation_kd") {
-        translation_kd_ = parameter.as_double();
+      if (name == plugin_name_ + ".translation_kpx") {
+        translation_kp_x = parameter.as_double();
+      } else if (name == plugin_name_ + ".translation_kix") {
+        translation_ki_x = parameter.as_double();
+      } else if (name == plugin_name_ + ".translation_kdx") {
+        translation_kd_x = parameter.as_double();
+      } else if (name == plugin_name_ + ".translation_kpy") {
+        translation_kp_y = parameter.as_double();
+      } else if (name == plugin_name_ + ".translation_kiy") {
+        translation_ki_y = parameter.as_double();
+      } else if (name == plugin_name_ + ".translation_kdy") {
+        translation_kd_y = parameter.as_double();
       } else if (name == plugin_name_ + ".rotation_kp") {
         rotation_kp_ = parameter.as_double();
       } else if (name == plugin_name_ + ".rotation_ki") {
@@ -819,10 +938,14 @@ rcl_interfaces::msg::SetParametersResult OmniPidPursuitController::dynamicParame
         final_yaw_goal_tolerance_ = parameter.as_double();
       } else if (name == plugin_name_ + ".approach_velocity_scaling_dist") {
         approach_velocity_scaling_dist_ = parameter.as_double();
-      } else if (name == plugin_name_ + ".v_linear_max") {
-        v_linear_max_ = parameter.as_double();
-      } else if (name == plugin_name_ + ".v_linear_min") {
-        v_linear_min_ = parameter.as_double();
+      } else if (name == plugin_name_ + ".v_linear_maxx") {
+        v_linear_max_x = parameter.as_double();
+      } else if (name == plugin_name_ + ".v_linear_minx") {
+        v_linear_min_x = parameter.as_double();
+      } else if (name == plugin_name_ + ".v_linear_maxy") {
+        v_linear_max_y = parameter.as_double();
+      } else if (name == plugin_name_ + ".v_linear_miny") {
+        v_linear_min_y = parameter.as_double();
       } else if (name == plugin_name_ + ".v_angular_max") {
         v_angular_max_ = parameter.as_double();
       } else if (name == plugin_name_ + ".v_angular_min") {
@@ -839,8 +962,21 @@ rcl_interfaces::msg::SetParametersResult OmniPidPursuitController::dynamicParame
         curvature_backward_dist_ = parameter.as_double();
       } else if (name == plugin_name_ + ".max_velocity_scaling_factor_rate") {
         max_velocity_scaling_factor_rate_ = parameter.as_double();
+      } else if (name == plugin_name_ + ".mid_distance") {
+        mid_distance_ = parameter.as_double();
+      } else if (name == plugin_name_ + ".last_distance") {
+        last_distance_ = parameter.as_double();
+      } else if (name == plugin_name_ + ".mid_speed") {
+        mid_speed_ = parameter.as_double();
+      } else if (name == plugin_name_ + ".last_speed") {
+        last_speed_ = parameter.as_double();
+      } else if (name == plugin_name_ + ".low_speed_threshold") {
+        low_speed_threshold_ = parameter.as_double();
+      } else if (name == plugin_name_ + ".max_decel_step") {
+        max_decel_step_ = parameter.as_double();
       }
-    } else if (type == ParameterType::PARAMETER_BOOL) {
+    } 
+    else if (type == ParameterType::PARAMETER_BOOL) {
       if (name == plugin_name_ + ".enable_rotation") {
         enable_rotation_ = parameter.as_bool();
       } else if (name == plugin_name_ + ".use_velocity_scaled_lookahead_dist") {
@@ -859,9 +995,12 @@ rcl_interfaces::msg::SetParametersResult OmniPidPursuitController::dynamicParame
 
   // 动态切换 1/2 档位后，PID 的 kp/kd/ki 与 max/min 也必须重新构造，
   // 否则只改了变量但 PID 对象仍使用旧参数。
-  move_pid_ = std::make_shared<PID>(
-    control_duration_, v_linear_max_, v_linear_min_, translation_kp_, translation_kd_,
-    translation_ki_);
+  move_pid_x = std::make_shared<PID>(
+    control_duration_, v_linear_max_x, v_linear_min_x, translation_kp_x, translation_kd_x,
+    translation_ki_x);
+  move_pid_y = std::make_shared<PID>(
+    control_duration_, v_linear_max_y, v_linear_min_y, translation_kp_y, translation_kd_y,
+    translation_ki_y);
   heading_pid_ = std::make_shared<PID>(
     control_duration_, v_angular_max_, v_angular_min_, rotation_kp_, rotation_kd_, rotation_ki_);
 
