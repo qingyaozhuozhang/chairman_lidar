@@ -23,8 +23,8 @@ def reporter(tty=False):
     logger = SimpleNamespace(info=messages.append, warn=messages.append, error=messages.append)
     now = [0.0]
     state = progress.TaskProgress(logger, stream, lambda: now[0])
-    state.begin('编号 0：原点（模式 3）')
-    state.stage('模式3 1/2 提前转正')
+    state.begin('编号 0：原点（模式 1）')
+    state.stage('模式1 直接导航')
     return state, stream, messages, now
 
 
@@ -32,11 +32,11 @@ def test_nonterminal_keeps_boundaries_without_periodic_log_spam():
     state, stream, messages, now = reporter()
     for i in range(100):
         now[0] = i * 0.3
-        state.update(f'距提前点 {i}m')
+        state.update(f'距目标 {i}m')
         state.render()
     assert stream.getvalue() == ''
     assert len(messages) == 1
-    state.end_stage('第一段动作已结束')
+    state.end_stage('导航动作已结束')
     assert len(messages) == 1
     state.finish(True)
     assert len(messages) == 2
@@ -48,7 +48,7 @@ def test_tty_updates_one_line_throttles_and_clears_before_logs(monkeypatch):
     state, stream, messages, now = reporter(tty=True)
     monkeypatch.setattr(progress.os, 'get_terminal_size', lambda *_: SimpleNamespace(columns=42))
     stream.fileno = lambda: 1
-    state.update('距提前点 0.300m | 朝向误差 10°')
+    state.update('距目标 0.300m | 朝向误差 10°')
     state.render()
     first = stream.getvalue()
     now[0] = 0.1
@@ -85,7 +85,7 @@ def test_terminal_state_distinguishes_cancel_failure_and_failed_cleanup(success,
         state.fail('ABORTED：Nav2 执行失败（状态码 6）')
     result = state.finish(success, cancelled, cleanup)
     assert result.startswith(f'[{state_label}]')
-    assert '编号 0：原点' in result and '结束位置：模式3 1/2' in result
+    assert '编号 0：原点' in result and '结束位置：模式1 直接导航' in result
     assert messages[-1] == result
     if cleanup:
         assert '尚未确认' in result

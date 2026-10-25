@@ -1,0 +1,24 @@
+[0.019s] Invoking command in '/home/hurricane/RC27/local_2/chairman_lidar/tool/build/tool': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble VIRTUAL_ENV_PROMPT=(ros.venv) /usr/bin/cmake --build /home/hurricane/RC27/local_2/chairman_lidar/tool/build/tool -- -j16 -l16
+[0.070s] Invoked command in '/home/hurricane/RC27/local_2/chairman_lidar/tool/build/tool' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble VIRTUAL_ENV_PROMPT=(ros.venv) /usr/bin/cmake --build /home/hurricane/RC27/local_2/chairman_lidar/tool/build/tool -- -j16 -l16
+[0.083s] Invoking command in '/home/hurricane/RC27/local_2/chairman_lidar/tool/build/tool': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble VIRTUAL_ENV_PROMPT=(ros.venv) /usr/bin/cmake --install /home/hurricane/RC27/local_2/chairman_lidar/tool/build/tool
+[0.093s] -- Install configuration: ""
+[0.094s] -- Up-to-date: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/lib/tool/downsample_map
+[0.094s] -- Up-to-date: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/lib/tool/get_init_pose
+[0.094s] -- Up-to-date: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/lib/tool/get_pose
+[0.094s] -- Up-to-date: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/lib/tool/point
+[0.094s] -- Up-to-date: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/ament_index/resource_index/package_run_dependencies/tool
+[0.094s] -- Up-to-date: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/ament_index/resource_index/parent_prefix_path/tool
+[0.094s] -- Up-to-date: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/tool/environment/ament_prefix_path.sh
+[0.094s] -- Up-to-date: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/tool/environment/ament_prefix_path.dsv
+[0.094s] -- Up-to-date: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/tool/environment/path.sh
+[0.094s] -- Up-to-date: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/tool/environment/path.dsv
+[0.094s] -- Up-to-date: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/tool/local_setup.bash
+[0.094s] -- Up-to-date: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/tool/local_setup.sh
+[0.094s] -- Up-to-date: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/tool/local_setup.zsh
+[0.094s] -- Up-to-date: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/tool/local_setup.dsv
+[0.095s] -- Up-to-date: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/tool/package.dsv
+[0.095s] -- Up-to-date: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/ament_index/resource_index/packages/tool
+[0.095s] -- Up-to-date: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/tool/cmake/toolConfig.cmake
+[0.095s] -- Up-to-date: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/tool/cmake/toolConfig-version.cmake
+[0.095s] -- Up-to-date: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/tool/package.xml
+[0.096s] Invoked command in '/home/hurricane/RC27/local_2/chairman_lidar/tool/build/tool' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble VIRTUAL_ENV_PROMPT=(ros.venv) /usr/bin/cmake --install /home/hurricane/RC27/local_2/chairman_lidar/tool/build/tool

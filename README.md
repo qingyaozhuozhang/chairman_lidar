@@ -49,7 +49,7 @@ chairman_lidar/
 │       │   ├── on_demand/              # Python 包 chairman_tasks
 │       │   │   ├── task.py             # 请求调度、任务互斥与 TaskContext
 │       │   │   ├── config.py           # 配置加载与校验
-│       │   │   ├── fixed_point/task.py # 三种导航模式及参数应用
+│       │   │   ├── fixed_point/task.py # 统一定点导航及参数应用
 │       │   │   └── special/            # 特殊任务入口与控制实现
 │       │   └── continuous/            # 独立运行的持续功能
 │       │       ├── odometry/           # /odom_map 发布与区域检测
@@ -135,7 +135,7 @@ source install/setup.bash
 | Nav2 基础配置 | `src/config/fishbot_navigation2/nav2_params.yaml` | 机器人尺寸、控制器、代价地图等参数 |
 | 建图点、场地初始位姿与区域 | `src/config/odometry/initial_poses.yaml`、`src/config/odometry/regions.yaml` | PCD 建图原点、4 个场地的启动位姿及红蓝区域边界 |
 | GICP 地图降采样 | `tool/downsample_map.py` | `GLOBAL_LEAF_SIZE` 为离线地图体素边长，默认 0.05 m；处理 `base.pcd` 生成 `final.pcd` |
-| 定点与任务模式 | `src/config/framework/on_demand/` | 红蓝点位、特殊任务、三种速度模式及特殊运动控制参数 |
+| 定点与任务模式 | `src/config/framework/on_demand/` | 红蓝点位、特殊任务、两档速度参数及特殊运动控制参数 |
 | 下位机通信 | `src/function/detail/continuous/micro_ros/config/boot.yaml` | 默认使用本项目 Agent；UDP IPv4 监听端口 8888 及可选外部工作空间 |
 | 地图和机器人模型 | `src/config/fishbot_navigation2/rviz`和`src/fishbot/fishbot_navigation/urdf` | 当前加载 `src/fishbot/fisbot_navigation/maps/room.yaml`、`src/fishbot/fishbot_navigation2/PCD/final.pcd`；核对 URDF、TF 安装偏移和扫描范围 |
 
@@ -242,16 +242,15 @@ ros2 run framework sum
 没有自定义命令行参数，不接受 `--selected-pose`、`--call` 等选项。场地来自启动环境 `SELECTED_POSE`；未设置时独立运行缺省为场地 1。`main_boot` 只能把环境传给它启动的子进程，不能改变另一个已经打开的终端。若跳过自动 `sum` 后在另一个终端调试，应显式沿用同一场地，例如 `SELECTED_POSE=4 ros2 run framework sum`。
 
 
-功能运行过程：三种速度模式统一输出任务开始与最终完成、失败或中止结果；运行过程在同一行更新阶段、误差和耗时，最多每秒刷新 5 次。状态条表示任务仍在执行，不表示完成百分比。阶段切换更新状态条，整次任务结束并完成收尾后自动重新显示完整菜单；重定向到文件时不输出状态条。
+功能运行过程：两档速度模式统一输出任务开始与最终完成、失败或中止结果；运行过程在同一行更新阶段、误差和耗时，最多每秒刷新 5 次。状态条表示任务仍在执行，不表示完成百分比。阶段切换更新状态条，整次任务结束并完成收尾后自动重新显示完整菜单；重定向到文件时不输出状态条。
 
 | 模式 | 配置文件 | 执行过程 |
 |---|---|---|
-| 1 | `speed_1.yaml` | 使用基础参数导航至目标 |
-| 2 | `speed_2.yaml` | 远处使用冲刺组，进入 `switch_distance` 后切换精调组 |
-| 3 | `speed_3.yaml` | 先执行提前点或原地朝向调整，确认第一段结束后进入真实目标 |
-| 4 | `special.yaml` | 特殊功能参数 |
+| 1 | `speed_1.yaml` | 快速档，直接导航至最终目标 |
+| 2 | `speed_2.yaml` | 慢速档，直接导航至最终目标 |
+| — | `special.yaml` | 特殊运动控制参数，不作为定点速度模式 |
 
-模式配置位于 `src/config/framework/on_demand/modes/`，使用与 `nav2_params.yaml` 一致的节点名称及 `ros__parameters` 层级。每个模式独立定义参数和流程设置，点位的 `mode` 对应文件中的 `id`。模式 2 的 `sprint_parameters` 与 `parameters` 对应两个阶段，参数名相同、数值独立。任务期间通过参数服务临时赋值，结束后恢复运行前的值；磁盘 `nav2_params.yaml` 保留启动基准。
+模式配置位于 `src/config/framework/on_demand/modes/`，使用与 `nav2_params.yaml` 一致的节点名称及 `ros__parameters` 层级。两档共用同一套直接导航流程，每个文件独立定义本档参数，点位的 `mode` 对应文件中的 `id`。一次导航只发送最终目标，全程使用所选参数组；任务期间通过参数服务临时赋值，结束后恢复运行前的值。磁盘 `nav2_params.yaml` 保留启动基准。
 
 完整菜单示例、任务接口及添加功能步骤见 [功能开发说明](docs/function_development.md)。
 

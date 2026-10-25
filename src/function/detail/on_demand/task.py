@@ -161,8 +161,6 @@ class TaskContext:
 
     def go_to_pose(self, x, y, qz, qw, mode=1, name='自定义目标'):
         def navigate(selected):
-            if self.node.mode_configs[selected].get('pre_align', {}).get('enabled', False):
-                return navigation.navigate_pre_align(self.node, x, y, qz, qw, name, speed_profile=selected)
             return navigation.navigate(self.node, x, y, qz, qw, name, speed_profile=selected)
         return self.navigation(mode, navigate)
 

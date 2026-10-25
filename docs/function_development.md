@@ -16,7 +16,7 @@ src/function/
 │   ├── on_demand/                        # Python 包 chairman_tasks
 │   │   ├── task.py                       # TaskServer、dispatch、TaskContext
 │   │   ├── config.py                     # 配置加载、名称展开与有效性校验
-│   │   ├── fixed_point/task.py           # 三种速度模式导航流程及参数应用
+│   │   ├── fixed_point/task.py           # 统一定点导航流程及参数应用
 │   │   └── special/
 │   │       ├── motion.py                 # 角度、坐标转换和速度限制计算
 │   │       ├── move_forward/task.py      # 沿自身坐标系往前直走控制
@@ -36,9 +36,8 @@ src/function/
     ├── points.yaml                       # 点位编号、地图位姿与模式
     ├── functions.yaml                    # 特殊功能登记与任务参数
     └── modes/
-        ├── speed_1.yaml                  # 基础导航
-        ├── speed_2.yaml                  # 冲刺与精调
-        ├── speed_3.yaml                  # 提前对齐
+        ├── speed_1.yaml                  # 快速档
+        ├── speed_2.yaml                  # 慢速档
         └── special.yaml                  # 特殊运动与检测参数
 ```
 
@@ -103,8 +102,8 @@ SELECTED_POSE=4 ros2 run framework sum
 ```text
 chairman_lidar 功能菜单
 定点导航：
-    0: 原点（模式 3：speed_3）
-    1: 矛头1（模式 3：speed_3）
+    0: 原点（模式 1：speed_1）
+    1: 矛头1（模式 1：speed_1）
     ...
 特殊功能：
    -1: 旋转180°
@@ -128,17 +127,16 @@ chairman_lidar 功能菜单
 
 | 模式 | 状态条中的阶段 |
 |---|---|
-| 1 | 基础导航 |
-| 2 | 冲刺 → 精调；起点在切换距离内时直接精调 |
-| 3 | 1/2 提前转正 → 2/2 进入真实目标；关闭提前对齐或满足直接导航分支时显示直接导航 |
+| 1 | 模式1 直接导航，使用快速档参数 |
+| 2 | 模式2 直接导航，使用慢速档参数 |
 
-模式 3 的显示示意如下；两行状态条代表同一行在不同时刻的内容：
+模式 1 的显示示意如下；两行状态条代表同一行在不同时刻的内容：
 
 ```text
-[任务开始] 编号 1：矛头1（模式 3）
-[===         ] 模式3 1/2 提前转正【矛头1（提前点）】 | 距提前点 0.300m | 朝向误差 2.1° | 1.2s
-[   ===      ] 模式3 2/2 进入真实目标【矛头1】 | 等待 Nav2 执行结果 | 2.0s
-[任务完成] 编号 1：矛头1（模式 3） | 结束位置：模式3 2/2 进入真实目标【矛头1】 | 执行成功；动作已结束，已发送零速度，临时参数已恢复 | 用时 …s
+[任务开始] 编号 1：矛头1（模式 1）
+[===         ] 模式1 直接导航【矛头1】 | 距目标 0.300m | 朝向误差 2.1° | 1.2s
+[   ===      ] 模式1 直接导航【矛头1】 | 等待 Nav2 执行结果 | 2.0s
+[任务完成] 编号 1：矛头1（模式 1） | 结束位置：模式1 直接导航【矛头1】 | 执行成功；动作已结束，已发送零速度，临时参数已恢复 | 用时 …s
 
 chairman_lidar 功能菜单
 定点导航：
@@ -152,7 +150,7 @@ chairman_lidar 功能菜单
 
 成功、中止或失败均先尝试停止动作和恢复参数，再报告 `[任务完成]`、`[任务中止]` 或 `[任务失败]`。结果中的“结束位置”指执行阶段。若停止或恢复尚未确认，结果会说明原因，后续任务在恢复完成前不能继续执行。
 
-模式 2 在精调参数设置成功后更新阶段。模式 3 第一段达到位置容差后，朝向满足容差或近点调整达到时限均可放行；超时放行不代表朝向已对齐。第二段必须等待第一段 Action 返回终态后才能发送。
+两档使用相同的目标发送和结果等待流程，距离与朝向误差仅用于状态显示。目标是否到达以 Nav2 的动作结果为准，任务收尾完成后再进入下一步。
 
 选择 -9 或 16 后继续输入：
 
@@ -183,7 +181,7 @@ red:
   34:
     name: 中场等待点
     pose: [1.20, 2.30, 0.0, 1.0]
-    mode: 3
+    mode: 1
 ```
 
 2. 蓝方也需要此点时，在已有 `blue:` 下填写同编号及蓝方坐标。只登记一方的点，仅在对应方菜单显示。
@@ -199,7 +197,7 @@ ros2 run chairman_config sync --files framework/on_demand/points.yaml
 
 ## 4. 增加新的速度模式
 
-每个速度模式独立配置 Nav2 参数及导航流程。点位的 `mode` 对应模式文件中的 `id`，`name` 用于菜单显示。已有模式使用 `speed_1.yaml`、`speed_2.yaml`、`speed_3.yaml`，字段含义见[内置速度模式](parameter_modification.md#33-改内置速度模式)。
+每个速度模式独立配置 Nav2 参数，共用同一套直接导航流程。点位的 `mode` 对应模式文件中的 `id`，`name` 用于菜单显示。内置 `speed_1.yaml` 为快速档，`speed_2.yaml` 为慢速档，字段含义见[内置速度模式](parameter_modification.md#33-改内置速度模式)。
 
 以新增 `speed_4.yaml` 为例，修改文件链如下：
 
@@ -231,9 +229,12 @@ parameters:
   controller_server:
     ros__parameters:
       FollowPath:
-        translation_kp: 3.5
-        v_linear_min: -0.25
-        v_linear_max: 0.25
+        translation_kpx: 3.5
+        translation_kpy: 3.5
+        v_linear_minx: -0.25
+        v_linear_maxx: 0.25
+        v_linear_miny: -0.25
+        v_linear_maxy: 0.25
   velocity_smoother:
     ros__parameters:
       max_velocity: [0.25, 0.25, 0.5]
@@ -252,15 +253,13 @@ cp src/config/framework/on_demand/modes/speed_4.yaml src/function/config/on_dema
 "framework/on_demand/modes/speed_4.yaml": "src/function/config/on_demand/modes/speed_4.yaml"
 ```
 
-模式编号使用未占用的 4 及以上整数。程序根据当前文件中的配置选择流程，编号只用于引用。可按所需流程选择复制来源：
+模式编号使用未占用的正整数；本例使用 4。编号只选择参数表，不决定导航算法。
 
-| 复制来源 | 本文件需要保留的配置 | 执行流程 |
+| 复制来源 | 顶层字段 | 执行流程 |
 |---|---|---|
-| `speed_1.yaml` 或速度模式模板 | `parameters` | 直接导航 |
-| `speed_2.yaml` | `parameters`、`sprint_parameters`、`switch_distance`、`switch_check_period` | 按本模式的距离阈值从冲刺切换到精调 |
-| `speed_3.yaml` | `parameters`、`pre_align` | 按本模式的提前距离及放行条件完成两段导航 |
+| `speed_1.yaml`、`speed_2.yaml` 或速度模式模板 | `id`、`name`、`parameters` | 应用本文件参数，直接导航至最终目标 |
 
-复制后修改编号、名称和参数，新文件与来源文件互相独立。例如从 `speed_3.yaml` 创建编号 4 后，该模式的提前距离只读取 `speed_4.yaml` 中的 `pre_align.distance`。冲刺与精调两组应完整列出相同的动态参数，分别填写各阶段的值；冲刺精调与提前对齐应配置为不同模式。
+复制后修改编号、名称和参数，新文件与来源文件互相独立。每份文件只包含一组 `parameters`，一次导航从开始到结束使用这组参数。调整 PID、速度和减速参数即可定义新的速度档位。
 
 新增已有 Nav2 参数时，在本文件对应的节点块中按原名填写；参数必须已由远端节点声明并支持动态更新。未列出的字段保持运行中的值。新增控制算法或远端尚未声明的字段，需要同时实现对应 Python 流程或 Nav2 插件逻辑。
 

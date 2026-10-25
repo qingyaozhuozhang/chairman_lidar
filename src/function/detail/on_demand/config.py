@@ -60,35 +60,11 @@ def load_modes(root=None):
             raise ValueError(f'模式id重复: {key}')
         if not isinstance(mode.get('name'), str) or not mode['name'].strip():
             raise ValueError(f'{path.name}: name必须为非空字符串')
-        for section in ('parameters', 'sprint_parameters'):
-            flatten_parameters(mode.get(section, {}))
+        unknown = set(mode) - {'id', 'name', 'parameters'}
+        if unknown:
+            raise ValueError(f'{path.name}: 仅支持 id、name、parameters，未知字段: {sorted(unknown)}')
         if not dynamic_parameters(mode.get('parameters', {})):
             raise ValueError(f'{path.name}: 缺少 parameters 原生参数表')
-        if 'sprint_parameters' in mode:
-            # 两阶段必须赋值同一组字段，避免精调阶段残留冲刺值。
-            fields = lambda section: {node: set(values) for node, values in
-                                      dynamic_parameters(mode[section]).items()}
-            if fields('sprint_parameters') != fields('parameters'):
-                raise ValueError(f'{path.name}: sprint_parameters 与 parameters 必须包含相同的动态参数')
-            for name, default in (('switch_distance', 1.5), ('switch_check_period', 0.05)):
-                value = mode.setdefault(name, default)
-                if (type(value) not in (int, float) or not math.isfinite(value)
-                        or value < 0 or (name == 'switch_check_period' and value == 0)):
-                    raise ValueError(f'{path.name}: {name} 必须为有限非负数，检查周期必须大于零')
-        if not isinstance(mode.get('pre_align', {}), dict):
-            raise ValueError(f'{path.name}: pre_align 必须为字典')
-        if 'pre_align' in mode:
-            align = mode['pre_align']
-            for name, default in {'enabled': True, 'distance': 0.5, 'release_xy_tolerance': 0.1,
-                                  'release_yaw_tolerance': 0.15, 'near_adjust_timeout': 0.5}.items():
-                value = align.setdefault(name, default)
-                if name == 'enabled':
-                    if type(value) is not bool:
-                        raise ValueError(f'{path.name}: pre_align.enabled 必须为布尔值')
-                elif type(value) not in (float, int) or not math.isfinite(value) or value < 0:
-                    raise ValueError(f'{path.name}: pre_align.{name} 必须为非负有限数值')
-            if align['enabled'] and 'sprint_parameters' in mode:
-                raise ValueError(f'{path.name}: 冲刺精调与提前对齐应分别配置为独立模式')
         result[key] = mode
     if not result:
         raise ValueError('未配置速度模式')
@@ -308,11 +284,8 @@ def load_configuration(node):
     node.speed_profiles = {}
     for key, mode in node.mode_configs.items():
         node.speed_profiles[key] = dynamic_parameters(mode['parameters'])
-        if 'sprint_parameters' in mode:
-            node.speed_profiles[f'{key}_sprint'] = dynamic_parameters(mode['sprint_parameters'])
     node.active_mode = None
     node.current_profile = None
-    node.dynamic_last_check_time = None
     for name, value in load_special_parameters(node=node).items():
         setattr(node, name, value)
     from ament_index_python.packages import get_package_share_directory

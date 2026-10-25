@@ -12,9 +12,8 @@ src/config/                              # 中央参数配置入口，使用 syn
 │   ├── points.yaml                      # 红蓝区点位、名称与模式
 │   ├── functions.yaml                   # 特殊功能登记及任务参数
 │   └── modes/
-│       ├── speed_1.yaml                 # 基础导航
-│       ├── speed_2.yaml                 # 冲刺与精调
-│       ├── speed_3.yaml                 # 提前对齐
+│       ├── speed_1.yaml                 # 快速档
+│       ├── speed_2.yaml                 # 慢速档
 │       └── special.yaml                 # 特殊运动和检测参数
 ├── fast_lio/                            # mid360.yaml 及其他雷达配置
 ├── fishbot_navigation2/
@@ -91,16 +90,17 @@ ros2 run chairman_config sync --files fishbot_navigation2/nav2_params.yaml odome
 | `odometry/regions.yaml` | `src/function/detail/continuous/odometry/config/regions.yaml` |
 | `framework/on_demand/points.yaml` | `src/function/config/on_demand/points.yaml` |
 | `framework/on_demand/functions.yaml` | `src/function/config/on_demand/functions.yaml` |
-| `framework/on_demand/modes/speed_3.yaml` | `src/function/config/on_demand/modes/speed_3.yaml` |
+| `framework/on_demand/modes/speed_1.yaml` | `src/function/config/on_demand/modes/speed_1.yaml` |
+| `framework/on_demand/modes/speed_2.yaml` | `src/function/config/on_demand/modes/speed_2.yaml` |
 | `framework/on_demand/modes/special.yaml` | `src/function/config/on_demand/modes/special.yaml` |
 
 
 ## 3. 按需功能参数
 
-点位、任务、模式和特殊运动控制的中央文件均可同步。以下示例更新模式 3：
+点位、任务、模式和特殊运动控制的中央文件均可同步。以下示例更新快速档：
 
 ```bash
-ros2 run chairman_config sync --files framework/on_demand/modes/speed_3.yaml
+ros2 run chairman_config sync --files framework/on_demand/modes/speed_1.yaml
 ```
 
 新增 Python 模块或模式文件后执行：
@@ -157,19 +157,18 @@ red:
 
 表中实现路径均以 `src/function/detail/on_demand/` 开头。
 
-15/16 的动态目标入口采用单段导航；`mode` 选择参数组，模式 2 仍按距离切换冲刺与精调。模式 3 的两段提前对齐由普通定点及 `ctx.go_to_pose()` 流程调用，15/16 使用其参数时不执行提前点流程。
+15/16 的动态目标入口、普通定点及 `ctx.go_to_pose()` 共用单段导航；`mode` 选择快速档或慢速档参数，目标计算方式由各功能入口决定。
 
 ### 3.3 改内置速度模式
 
 | 模式 | 中央文件 | 流程 |
 |---|---|---|
-| 1 | `src/config/framework/on_demand/modes/speed_1.yaml` | 基础导航 |
-| 2 | `src/config/framework/on_demand/modes/speed_2.yaml` | 远处冲刺、近点精调 |
-| 3 | `src/config/framework/on_demand/modes/speed_3.yaml` | 提前对齐、进入真实目标 |
+| 1 | `src/config/framework/on_demand/modes/speed_1.yaml` | 快速档，直接导航 |
+| 2 | `src/config/framework/on_demand/modes/speed_2.yaml` | 慢速档，直接导航 |
 
-三份文件均完整列出 `controller_server` 与 `velocity_smoother`，名称、节点层级及数组格式与 `nav2_params.yaml` 一致。`id` 供点位的 `mode` 引用，`name` 用于菜单显示；`parameters` 下是本模式独立使用的 Nav2 参数树。每个文件的参数及流程设置只作用于自身。
+两份文件均完整列出本档使用的 `controller_server` 与 `velocity_smoother` 参数块，节点层级及数组格式与 `nav2_params.yaml` 一致。`id` 供点位的 `mode` 引用，`name` 用于菜单显示；`parameters` 下是本档独立使用的 Nav2 参数树。两档采用相同的导航算法，只通过参数值区分。
 
-例如把模式 1 的线速度上限改为 0.4 m/s，应在现有 `FollowPath` 块调整 `v_linear_min: -0.4`、`v_linear_max: 0.4`，同时修改该文件的完整平滑器块：
+例如把模式 1 的线速度上限改为 0.4 m/s，应在现有 `FollowPath` 块调整 `v_linear_minx: -0.4`、`v_linear_maxx: 0.4`、`v_linear_miny: -0.4`、`v_linear_maxy: 0.4`，同时修改该文件的完整平滑器块：
 
 ```yaml
 parameters:
@@ -195,51 +194,24 @@ parameters:
 
 | 字段 | 含义 |
 |---|---|
-| `FollowPath.translation_kp/ki/kd` | 平移 PID 增益 |
+| `FollowPath.translation_kpx/kix/kdx`、`translation_kpy/kiy/kdy` | X/Y 平移 PID 增益 |
 | `FollowPath.rotation_kp/ki/kd` | 旋转 PID 增益 |
-| `FollowPath.v_linear_min/max` | 控制器线速度范围 |
+| `FollowPath.v_linear_minx/maxx`、`v_linear_miny/maxy` | 控制器 X/Y 线速度范围 |
 | `FollowPath.v_angular_min/max` | 控制器角速度范围 |
 | `general_goal_checker.xy_goal_tolerance` | 到点位置容差，m |
 | `general_goal_checker.yaw_goal_tolerance` | 到点航向容差，rad |
 | `velocity_smoother` 的 `max_velocity/min_velocity` | 平滑器各轴速度限制 |
 | `velocity_smoother` 的 `max_accel/max_decel` | 平滑器各轴加速与制动限制 |
 
-**模式 2：两组参数分别配置。** `sprint_parameters` 用于远处冲刺，`parameters` 用于近点精调，两组控制同一批参数，因此字段名称相同。
+当前快速档的 X/Y 速度范围为 ±1.5 m/s，慢速档为 ±0.5 m/s。两档均使用各自的 PID、目标容差和末端减速参数，目标由 Nav2 持续跟踪到完成。
 
-| 配置项 | 冲刺组 | 精调组 |
-|---|---|---|
-| `FollowPath.translation_kp` | 10.0 | 4.0 |
-| `FollowPath.v_linear_max` | 3.0 | 1.5 |
-| `velocity_smoother.max_velocity` | [3.0, 3.0, 2.5] | [1.5, 1.5, 1.5] |
-
-顶层 `switch_distance` 默认为 1.5 m，`switch_check_period` 默认为 0.05 s。起点距离大于阈值时冲刺，进入阈值后精调；起点已在阈值内则直接精调。切换后不再返回冲刺，参数设置成功后才更新显示阶段。
-
-**模式 3：提前对齐条件单独配置。** 以下字段位于顶层 `pre_align`：
-
-```yaml
-pre_align:
-  enabled: true
-  distance: 0.5
-  release_xy_tolerance: 0.1
-  release_yaw_tolerance: 0.15
-  near_adjust_timeout: 0.5
-```
-
-`distance` 是提前点与真实目标间的距离，单位 m。当前位置已在该距离内时先原地调整朝向，否则先导航至目标连线上的提前点。第一段使用最终目标朝向；位置进入 `release_xy_tolerance` 后，航向满足 `release_yaw_tolerance`（rad）或近点调整达到 `near_adjust_timeout`（s）时放行。第一段 Action 终止确认完成后发送第二段，超时放行不等于已满足航向容差。
-
-关闭 `enabled`、距离阈值接近零或无法获取初始地图位姿时，流程直接导航至真实目标。
+控制器限速和速度平滑器限速作用于不同环节。当前两档的平滑器 `max_velocity` 均为 `[3.0, 3.0, 2.5]`，慢速档的平移限制由控制器的 X/Y 上限 0.5 m/s 提供。调速时应同时核对控制器各轴限速、末端减速值和平滑器限制。
 
 ### 3.4 新增跑定点模式参数
 
-新增模式可复制 `docs/templates/speed_mode.yaml` 或所需流程的现有模式文件，设置唯一 `id` 和显示用 `name`，保留完整节点块后调整参数。点位选择 `mode: 4` 时，只使用编号 4 文件中的配置；修改其他模式不会改变本模式的值。创建文件、登记同步映射和点位引用的步骤见[新增速度模式](function_development.md#4-增加新的速度模式)。
+新增模式可复制 `docs/templates/speed_mode.yaml` 或现有速度模式文件，设置唯一 `id` 和显示用 `name`，保留完整节点块后调整参数。点位选择 `mode: 4` 时，只使用编号 4 文件中的配置；修改其他模式不会改变本模式的值。创建文件、登记同步映射和点位引用的步骤见[新增速度模式](function_development.md#4-增加新的速度模式)。
 
-| 本模式的配置 | 导航行为 |
-|---|---|
-| 仅有 `parameters` | 全程使用本组参数直接导航 |
-| 同时有 `parameters`、`sprint_parameters` | 按本文件的 `switch_distance` 和 `switch_check_period` 切换冲刺与精调 |
-| 有 `parameters`，且 `pre_align.enabled: true` | 按本文件的 `pre_align` 设置提前对齐，再进入最终目标 |
-
-冲刺和精调两组必须包含相同的动态参数字段，数值分别配置。提前对齐与冲刺精调使用不同的模式文件。新增已有 Nav2 参数时，在对应节点的完整参数块中填写原参数名及正确类型；未列出的参数保持当前运行值。
+模式文件顶层只包含 `id`、`name`、`parameters`。所有模式全程使用本文件的一组参数，直接发送最终目标并等待结果。新增已有 Nav2 参数时，在对应节点的完整参数块中填写原参数名及正确类型；未列出的参数保持当前运行值。
 
 模式切换只更新运行期间可修改的参数：
 
@@ -255,7 +227,7 @@ pre_align:
 一次导航片段按以下顺序处理参数：
 
 1. 读取本次将修改的运行参数并保存原值。
-2. 设置所选模式；冲刺、精调及提前对齐的后续阶段继续使用本次导航的同一份原值记录。
+2. 设置所选模式的参数，发送最终目标并等待 Nav2 结果。
 3. 目标完成、失败或取消后，确认 Nav2 动作结束。
 4. 恢复原值并读回核对，成功后允许组合任务继续下一步。
 

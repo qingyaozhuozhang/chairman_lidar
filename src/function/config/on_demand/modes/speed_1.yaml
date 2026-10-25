@@ -1,9 +1,9 @@
+# 模式 1：快速档，使用统一的直接导航流程。
 # 完整列出本模式使用的 Nav2 参数块；未调节的字段保留启动基准值。
 # 标记“启动项”的字段仅供查看，请在 nav2_params.yaml 中修改并重启 Nav2。
 # 其余字段通过参数服务临时赋值，任务结束恢复运行前的值。
 id: 1
 name: speed_1
-base_mode: 1
 
 parameters:
   controller_server:

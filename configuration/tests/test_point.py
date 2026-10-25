@@ -87,7 +87,7 @@ def test_partial_batch_times_out_and_can_restart():
 def test_point_write_preserves_format_orientation_metadata_and_other_team(tmp_path, pose_text):
     path = tmp_path / 'points.yaml'
     original = ('# header\nred:\n  1:\n    name: "点位 # 1"\n' + pose_text
-                + '    mode: 3\nblue:\n  1: {name: 蓝方, pose: [0, 0, 0, 1], mode: 2}\n')
+                + '    mode: 1\nblue:\n  1: {name: 蓝方, pose: [0, 0, 0, 1], mode: 2}\n')
     path.write_text(original)
     point.update_point_xy(path, 'red', 1, 3.1234, -4.5678)
     assert path.read_text() == original.replace('-1.000', '3.123').replace('2.000', '-4.568')
@@ -136,7 +136,7 @@ def test_workspace_search_is_local_and_explicit_path_does_not_fall_back(tmp_path
 
 def calibration_workspace(root, is_region):
     point_text = ('# points\nred:\n'
-                  '  14: {name: 目标, pose: [0.000, 0.000, -0.707, 0.707], mode: 3}\n'
+                  '  14: {name: 目标, pose: [0.000, 0.000, -0.707, 0.707], mode: 1}\n'
                   'blue:\n  14: {name: 蓝方, pose: [9, 8, 0, 1], mode: 2}\n')
     region_text = ('# regions\nregions_red:\n'
                    '  - {id: 14, name: 区域, x_min: 0, x_max: 1, y_min: 0, y_max: 1}\n'

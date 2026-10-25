@@ -1,0 +1,37 @@
+-- The C compiler identification is GNU 11.4.0
+-- The CXX compiler identification is GNU 11.4.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Found ament_cmake: 1.3.12 (/opt/ros/humble/share/ament_cmake/cmake)
+-- Found Python3: /home/hurricane/ros.venv/bin/python3 (found version "3.10.12") found components: Interpreter 
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /home/hurricane/RC27/local_2/chairman_lidar/tool/build/tool
+-- Install configuration: ""
+-- Installing: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/lib/tool/downsample_map
+-- Installing: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/lib/tool/get_init_pose
+-- Installing: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/lib/tool/get_pose
+-- Installing: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/lib/tool/point
+-- Installing: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/ament_index/resource_index/package_run_dependencies/tool
+-- Installing: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/ament_index/resource_index/parent_prefix_path/tool
+-- Installing: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/tool/environment/ament_prefix_path.sh
+-- Installing: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/tool/environment/ament_prefix_path.dsv
+-- Installing: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/tool/environment/path.sh
+-- Installing: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/tool/environment/path.dsv
+-- Installing: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/tool/local_setup.bash
+-- Installing: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/tool/local_setup.sh
+-- Installing: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/tool/local_setup.zsh
+-- Installing: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/tool/local_setup.dsv
+-- Installing: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/tool/package.dsv
+-- Installing: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/ament_index/resource_index/packages/tool
+-- Installing: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/tool/cmake/toolConfig.cmake
+-- Installing: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/tool/cmake/toolConfig-version.cmake
+-- Installing: /home/hurricane/RC27/local_2/chairman_lidar/tool/install/tool/share/tool/package.xml
