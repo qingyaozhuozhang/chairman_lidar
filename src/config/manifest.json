@@ -18,6 +18,5 @@
   "framework/on_demand/functions.yaml": "src/function/config/on_demand/functions.yaml",
   "framework/on_demand/modes/special.yaml": "src/function/config/on_demand/modes/special.yaml",
   "framework/on_demand/modes/speed_1.yaml": "src/function/config/on_demand/modes/speed_1.yaml",
-  "framework/on_demand/modes/speed_2.yaml": "src/function/config/on_demand/modes/speed_2.yaml",
-  "framework/on_demand/modes/speed_3.yaml": "src/function/config/on_demand/modes/speed_3.yaml"
+  "framework/on_demand/modes/speed_2.yaml": "src/function/config/on_demand/modes/speed_2.yaml"
 }

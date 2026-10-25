@@ -244,6 +244,92 @@ def test_source_symlink_into_install_is_rejected(tmp_path, monkeypatch, capsys):
     assert not list(tmp_path.rglob('.point_backups'))
 
 
+def startup_workspace(root):
+    calibration_workspace(root, False)
+    sources = [root / 'src/config/odometry/initial_poses.yaml',
+               root / 'src/function/detail/continuous/odometry/config/initial_poses.yaml']
+    original = (ROOT / 'src/config/odometry/initial_poses.yaml').read_text()
+    for index, path in enumerate(sources):
+        path.write_text(f'# source {index}\n' + original)
+    installed = root / 'install/odometry/share/odometry/config/initial_poses.yaml'
+    installed.parent.mkdir(parents=True, exist_ok=True)
+    installed.write_text('installed: [must remain untouched\n')
+    return sources, installed
+
+
+def calibrate_startup(root, monkeypatch, number=4, collector=None):
+    answers = iter([str(number), '', 'b'])
+    monkeypatch.setattr('builtins.input', lambda _: next(answers))
+    if collector is None:
+        collector = SimpleNamespace(elapsed=0.1, collect_next_average=lambda _: sample(1.25, math.pi/2))
+    point.run_initial_pose_mode(collector, root / 'src/config/odometry/initial_poses.yaml', 5.0, root)
+
+
+@pytest.mark.parametrize('number', [1, 2, 3, 4])
+def test_startup_menu_saves_xy_and_heading_in_both_sources_only(tmp_path, monkeypatch, number):
+    sources, installed = startup_workspace(tmp_path)
+    before = {path: path.read_text() for path in sources + [installed]}
+    calibrate_startup(tmp_path, monkeypatch, number)
+    for path in sources:
+        expected = yaml.safe_load(before[path])
+        expected['poses'][number].update(lidar_init_x=1.25, lidar_init_y=-1.25,
+                                        lidar_init_qz=0.707107, lidar_init_qw=0.707107)
+        assert yaml.safe_load(path.read_text()) == expected
+        assert path.read_text().splitlines()[:3] == before[path].splitlines()[:3]
+    assert installed.read_text() == before[installed]
+    assert not list(tmp_path.rglob('.point_backups'))
+
+
+def test_startup_uses_new_ten_sample_mean_and_wraps_heading(tmp_path, monkeypatch):
+    sources, _ = startup_workspace(tmp_path)
+    collector = point.PoseCollector()
+    collector.pose_callback(sample(-999))
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(calibrate_startup, tmp_path, monkeypatch, 2, collector)
+        deadline = time.monotonic() + 1
+        while not collector.collecting:
+            if future.done():
+                future.result()
+            assert time.monotonic() < deadline
+            time.sleep(0.001)
+        for i, value in enumerate([-100, 1, 2, 3, 4, 5, 6, 7, 8, 100]):
+            collector.pose_callback(sample(value, math.radians(179 if i % 2 else -179)))
+        future.result(timeout=2)
+    for path in sources:
+        pose = yaml.safe_load(path.read_text())['poses'][2]
+        assert pose['lidar_init_x'] == 4.5 and pose['lidar_init_y'] == -4.5
+        assert abs(pose['lidar_init_qz']) == 1.0
+        assert pose['lidar_init_qw'] == 0.0
+
+
+@pytest.mark.parametrize('failure', ['missing_id', 'write_failure', 'install_symlink'])
+def test_startup_failure_leaves_both_sources_and_install_unchanged(tmp_path, monkeypatch, capsys, failure):
+    sources, installed = startup_workspace(tmp_path)
+    if failure == 'missing_id':
+        sources[1].write_text(sources[1].read_text().replace('  4:', '  5:'))
+    elif failure == 'install_symlink':
+        installed.write_bytes(sources[1].read_bytes())
+        sources[1].unlink()
+        sources[1].symlink_to(installed)
+    else:
+        replace = os.replace
+        failed = False
+
+        def fail_once(source, target):
+            nonlocal failed
+            if Path(target) == sources[1] and not failed:
+                failed = True
+                raise OSError('simulated write failure')
+            return replace(source, target)
+
+        monkeypatch.setattr(point.os, 'replace', fail_once)
+    before = {path: path.read_bytes() for path in sources + [installed]}
+    calibrate_startup(tmp_path, monkeypatch)
+    assert '本次标定未完成' in capsys.readouterr().out
+    assert all(path.read_bytes() == original for path, original in before.items())
+    assert not list(tmp_path.rglob('.point_backups'))
+
+
 @pytest.mark.skipif(os.environ.get('CHAIRMAN_ROS_INTEGRATION') != '1', reason='Requires sourced ROS and test domain 197')
 def test_live_ros_pose_messages_collect_without_rosout():
     import rclpy

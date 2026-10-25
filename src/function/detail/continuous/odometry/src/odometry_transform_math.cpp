@@ -39,7 +39,7 @@ public:
 
         this->declare_parameter("default_inflation_radius", 0.5);
 
-        // 初始位姿参数（用于 /initialpose 发布）
+        // 所选启动点用于位置核对；可选的 /initialpose 发布默认关闭。
         this->declare_parameter("lidar_init_x", -5.106);
         this->declare_parameter("lidar_init_y", -1.4115);
         this->declare_parameter("lidar_init_z", 0.000);
@@ -50,8 +50,8 @@ public:
         this->declare_parameter("required_tf_stable_count", 20);
         this->declare_parameter("tf_jump_threshold", 0.01);
 
-        // TF 首次稳定后按配置次数发布初始位姿。
-        this->declare_parameter("initialpose_publish_after_stable_count", 1);
+        // GICP 从启动参数初始化；默认不再由 odometry 重复发送定位指令。
+        this->declare_parameter("initialpose_publish_after_stable_count", 0);
 
         selected_pose_ = static_cast<int>(this->get_parameter("selected_pose").as_int());
 
@@ -275,7 +275,7 @@ private:
                 this->get_logger(),
                 *this->get_clock(),
                 1000,
-                "启动初始化：TF 仍在跳变，暂不发布 /initialpose。jump=%.4f m, 当前 map=(%.4f, %.4f)",
+                "启动初始化：等待地图 TF 稳定。jump=%.4f m, 当前 map=(%.4f, %.4f)",
                 jump,
                 map_x,
                 map_y
@@ -305,7 +305,7 @@ private:
 
             RCLCPP_INFO(
                 this->get_logger(),
-                "✅ 启动初始化：TF 已连续稳定，准备发布 /initialpose。当前 map=(%.4f, %.4f), yaw=%.4f",
+                "启动阶段：TF 已连续稳定。当前 map=(%.4f, %.4f), yaw=%.4f",
                 map_x,
                 map_y,
                 map_yaw
@@ -393,7 +393,7 @@ private:
 
         RCLCPP_WARN(
             this->get_logger(),
-            "启动初始化完成：initialpose_publish_after_stable_count=0，没有发布 /initialpose，直接进入正常输出。当前误差=%.4f m",
+            "进入里程计输出阶段：初始位姿由定位节点管理，距预设启动点 %.4f m",
             current_error
         );
 
@@ -456,7 +456,7 @@ private:
             }
         }
 
-        // 启动阶段：TF 第一次稳定后，发布 /initialpose
+        // TF 稳定后进入里程计输出；仅显式配置非零次数时发布 /initialpose。
         if (!initialpose_stage_done_) {
             bool can_continue =
                 handle_startup_initialpose_stage(map_x, map_y);
@@ -571,7 +571,7 @@ private:
     bool initialpose_stage_done_ = false;
 
     int initialpose_publish_count_ = 0;
-    int initialpose_publish_after_stable_count_ = 1;
+    int initialpose_publish_after_stable_count_ = 0;
 
     // 动态参数客户端
     rclcpp::AsyncParametersClient::SharedPtr local_costmap_param_client_;

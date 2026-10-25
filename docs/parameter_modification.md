@@ -383,13 +383,35 @@ poses:
     lidar_init_qw: 0.7071068
 ```
 
-通过 `tool get_init_pose` 获取的四个值按上述字段填写。odometry 启动时根据 `SELECTED_POSE` 加载该组参数，在 TF 稳定后按配置次数发布 `/initialpose`。`/odom_map` 的平面位置与航向来自地图 TF，初始位姿文件不会直接改写 TF。
+四个字段表示所选启动点处 `base_footprint` 在栅格地图 `map` 中的位置与朝向：x/y 单位 m，qz/qw 为平面朝向四元数。可通过 RViz 的 `2D Pose Estimate` 配合 `tool get_init_pose` 获取这些值；定位运行期间，该操作也会重新初始化 GICP。
+
+同一文件中的 `mapping_pose` 保存建图点，即这份 PCD 的坐标系原点在 `map` 中的位姿：
+
+```yaml
+mapping_pose:
+  x: -5.082
+  y: -1.5
+  z: 0.0
+  roll: 0.0
+  pitch: 0.0
+  yaw: -1.5707963267948966
+```
+
+位置单位 m，角度单位 rad。建图点初值采用 1 号点的位置和朝向，将该点定义为 PCD 的零位姿；`mapping_pose` 保存这个原点在导航 `map` 中的坐标。建图点独立保存，不随 `poses` 中的点位标定自动改变。每份 PCD 使用一组建图点标定；在 1 号点建图后从 2 号点启动时，保留 `mapping_pose`，选择 `poses` 中的 2 号。重新建图或转换 PCD 坐标系时才需重新核对建图点。`point.py` 的启动点标定只修改 1～4 号位姿，不修改 `mapping_pose`。
+
+使用 `ros2 run tool point` 实车标定时，先选菜单 `3：启动点标定`，再选启动编号 1～4。机器人停稳且朝向正确后确认采集，工具读取 10 条新 `/odom_map` 消息，去极值平均 x/y 与解环绕后的 yaw，将 yaw 转为 qz/qw，同时写入中央文件和 `src/function/detail/continuous/odometry/config/initial_poses.yaml`。四个字段保留 6 位小数，其他编号、字段和注释保持不变；不写 `install`，不创建备份目录。保存后构建 `odometry`，重新加载工作空间，再重启 Navigation2 与 odometry。
+
+应先确认 GICP 已配准成功、地图位姿正确，再标定启动点。例如从已知启动位置完成定位后，将车移动到其他启动位置采集。工具记录的是当前定位结果；未配准时仅由旧启动值生成的位姿，不能作为重新标定的依据。
+
+`main_boot` 将所选编号通过 `SELECTED_POSE` 传给导航与 odometry。GICP launch 从 odometry 包内同一份文件读取 `mapping_pose`，转换为 `map_to_pcd`；读取所选启动点，转换为 `initial_map_pose`。两项传入参数的顺序均为 `[x, y, z, roll, pitch, yaw]`，平面启动点的 z、roll、pitch 为 0。定位节点结合当前 `odom → base_footprint` 和地图固定变换，分别计算匹配初值与初始 `map → odom`，因此启动点中无需人工扣除雷达安装偏移。
+
+odometry 默认不自动发布 `/initialpose`，其 `/odom_map` 的平面位置与航向直接来自地图 TF。启动点负责初始化，后续位置由局部里程计与 GICP 匹配共同确定。
 
 ```bash
 ros2 run chairman_config sync --files odometry/initial_poses.yaml
 ```
 
-同步后重启 odometry。当前 GICP 节点未启用 `/initialpose` 订阅，因此该发布不会直接重置配准结果；配准中的地图偏移和 TF 转发节点的初始变换需分别核对。导航 launch 的 `PRESET_POSES` 生成的字符串未接入发布动作，不作为初始化生效入口。
+同步后重启 Navigation2 与 odometry，并使用同一场地编号。启动时应将小车放在对应点位且朝向一致，等待 `[定位就绪] GICP 首次配准收敛` 后核对 RViz 位姿。仅修改磁盘文件不会重置已经运行的定位节点。
 
 ### 6.2 红蓝区域边界
 
@@ -436,16 +458,53 @@ ros2 run chairman_config sync --files fishbot_navigation2/rviz/nav2_default_view
 
 重启 RViz 后加载。Livox 的 RViz 配置同理，使用 `manifest.json` 中对应键。
 
-导航 launch 同时配置 GICP 与 TF 转发：
+### 7.1 GICP 配准与地图坐标
+
+建图点与启动点统一配置在 `odometry/initial_poses.yaml`；其余配准、坐标系与发布参数采用定位节点默认值。导航 launch 启动一个 GICP 节点，统一负责初始化、配准和 `map → odom` 发布：
 
 | 项目 | 位置与含义 |
 |---|---|
 | 点云地图 | `pcd_file_path` 当前指向 `PCD/scans.pcd`，用于 GICP 配准 |
-| GICP 输出 | `small_gicp_relocalization_node` 的 `map_frame/odom_frame` 为 `map1/odom1` |
-| TF 转发 | C++ `tf_relay_node` 将源坐标系对转发为 `map/odom` |
-| 转发频率与时间戳 | `publish_rate_hz: 20.0`；`time_offset_sec: 0.1` 表示输出时间戳相对当前 ROS 时间的偏移 |
-| 初始变换 | `init_pose` 顺序为 `[x, y, z, roll, pitch, yaw]`，位置单位 m、角度单位 rad；仅在尚未收到源 TF 时使用 |
+| GICP 输出 | `map_frame: map`、`odom_frame: odom`，由定位节点直接发布该 TF |
+| 启动点参考 | `robot_base_frame: base_footprint`；`initial_map_pose` 由 launch 根据四个启动点生成 |
+| 地图坐标标定 | `initial_poses.yaml` 的 `mapping_pose` 由 launch 转换为 `map_to_pcd`，表示点云地图坐标系在栅格地图 `map` 中的位姿，单位 m/rad；不随启动编号变化 |
+| 点云输入 | `input_cloud_topic: /cloud_registered`；根据消息的 frame 与时间戳变换到 `odom` 后配准 |
+| 配准频率 | `registration_rate_hz: 2.0`，每轮处理累积点云 |
+| TF 频率与时间戳 | `publish_rate_hz: 20.0`；`time_offset_sec: 0.1` 表示输出时间戳相对当前 ROS 时间的偏移 |
+| 地图降采样 | `global_leaf_size: 0.05`，单位 m；定位节点加载 PCD 后进行体素降采样 |
+| 实时点云处理 | FAST-LIO 输出 `/cloud_registered`；GICP 转换到 `odom`、过滤非有限点，再按 `registered_leaf_size: 0.05`（m）进行体素降采样并计算协方差 |
+| 匹配参数 | 默认 `num_threads: 16`、`num_neighbors: 10`、`max_dist_sq: 4.0`；最后一项为对应点距离平方上限，单位 m² |
 
-源 TF 暂时不可用时，转发节点继续发布最近一次成功读取的变换；它不执行点云配准。独立入口为 `ros2 run small_gicp_relocalization tf_relay_node`，总导航运行期间不要重复启动同一 TF 发布者。
+用 `T_A_B` 表示将 B 系坐标转换为 A 系坐标的变换，初始化关系为：
 
-GICP 的地图固定偏移 `T_map_3dmap` 定义在 `src/fishbot/small_gicp_relocalization/src/small_gicp_relocalization.cpp`。修改该变换涉及 C++ 代码，需构建 `small_gicp_relocalization` 后重启定位节点。地图、配准输出与转发初始变换应使用一致的场地坐标约定。
+```text
+A = T_map_pcd                 ← initial_poses.yaml 的 mapping_pose 建图点
+B = T_map_start               ← 所选启动点，作为本次输出的固定参考
+O = T_odom_base_footprint      ← 初始化时的局部里程计 TF，包含安装偏移
+
+启动点相对建图点：S = T_pcd_start = inverse(A) × B
+GICP 初值：T_pcd_odom = S × inverse(O)
+初始 TF： T_map_odom = B × inverse(O)
+匹配后先换到启动参考系：T_start_odom = inverse(S) × GICP 的 T_pcd_odom 匹配结果
+输出到导航地图：T_map_odom = B × T_start_odom
+```
+
+例如建图原点取 1 号点 `(-5.082, -1.5, yaw=-π/2)`，选择 2 号启动点 `(5.708, -5.257, yaw=π/2)`，底盘在原 PCD 中的初始位置为 `(3.757, 10.790)`，朝向为 `π`。随后再结合当前局部里程计和安装偏移得到 `T_pcd_odom`，作为第一轮 GICP 配准的初值；无需移动 PCD 地图。从建图点本身启动时，底盘相对 PCD 的位姿为零，配准初值仍按实际局部里程计和安装偏移换算。
+
+输出端的 `map_to_start` 使用所选启动点的位置与朝向；`result_t_` 保留 GICP 的原始 `PCD ← odom` 结果。先用 `inverse(S)` 将结果转换到启动参考系，再乘 `map_to_start`。此时输出等价于 `A × result_t_`；直接计算 `B × result_t_` 会重复叠加建图点到启动点的相对变换。
+
+启动日志 `[GICP 启动]` 显示所选编号和实际读取的位姿文件；`[定位初始化]` 显示底盘在 `map` 与 PCD 中的位置、朝向；`[匹配初值]` 显示实际传给配准的 `PCD ← odom` 变换。位置单位 m，航向单位 rad。这些信息在初始化时输出，首次配准成功仍以 `[定位就绪]` 为准。
+
+`map_to_pcd` 是两份地图之间的固定标定，切换启动点时保持不变；若重新建图或更改地图坐标约定，则需要重新核对。地图 YAML 的 `origin` 描述栅格图像原点在 `map` 中的位置，不能直接当作 `map_to_pcd`。两张地图即使显示中心不同，也应先核对相同物理点的坐标与轴方向，再确定平移和旋转。
+
+不同启动点改变公式中的 B，因此得到不同的 GICP 初值。如果将 A 也替换为同一个 B，`inverse(B) × B` 会相消，初值丢失启动位置的区别，并错误地把地图关系绑定到当前机器人位姿。仅当已把 PCD 中所有点转换到栅格地图的 `map` 坐标系时，`mapping_pose` 的六个字段才都设为 0，使 `map_to_pcd` 为单位变换；单纯降采样不完成这项坐标转换。
+
+节点先等待局部 TF，再发布换算出的初始变换；配准不收敛、有效对应点不足或结果非有限时保留上次变换。TF 定时器与配准使用独立回调组，独立可执行程序采用多线程执行器，使 TF 发布不必等待一轮配准结束。TF 持续发布不代表每一帧都有新匹配；首次匹配成功以 `[定位就绪]` 日志为准。
+
+首次有效收敛输出 `[定位就绪]`，后续有效收敛以 INFO 级别输出 `[定位更新]`，每 3 秒最多一次；失败后再次有效收敛立即输出 `[定位恢复]`。成功日志中的 `source` 是本轮参与配准的实时点云点数，`target` 是实际参与匹配的地图点数。实时扫描只覆盖当前可见范围，地图则由多帧构成；相同体素边长代表相同采样尺度，不能保证两者点数或局部密度处处相等。
+
+配准告警记录失败原因、实际迭代次数与上限、有效对应点数与本轮源点数、地图点数、误差、耗时和连续失败轮数。`converged=0` 表示本轮迭代未满足收敛条件；`inliers` 仅表示参与匹配的有效对应点数量，不能单独证明定位成功。当前每轮最多迭代 10 次，平移和旋转的单次更新量需分别不超过 0.001 m 和 0.1°；这两个阈值是迭代停止条件，不代表绝对定位精度。告警中的“运行到迭代上限”与“优化器提前退出”用于区分排查方向；`error` 是配准目标函数值，不是米制位置误差。收敛仍可能发生在错误的局部最优位置，需要结合 RViz 中实时点云与地图的重合情况核对。
+
+RViz 发布的 `/initialpose` 必须使用 `map` 坐标系；节点按同一公式重新设置配准初值与初始 TF，并清空待配准点云。总导航运行时不要启动第二个 `map → odom` 发布者。
+
+修改定位 C++ 或 launch 后，构建 `small_gicp_relocalization`，重新加载工作空间并重启导航。

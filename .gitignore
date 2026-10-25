@@ -1,1 +1,2 @@
-src/fishbot/fishbot_navigation2/PCD/scans.pcd
+# 忽略所有目录下的 PCD 点云地图（扩展名不区分大小写）
+*.[pP][cC][dD]

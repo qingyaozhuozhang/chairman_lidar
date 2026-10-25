@@ -11,6 +11,7 @@ install(CODE "file(REMOVE
   \"\${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/config/on_demand/special.yaml\"
   \"\${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/config/on_demand/modes/base.yaml\"
   \"\${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/config/on_demand/modes/dynamic.yaml\"
-  \"\${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/config/on_demand/modes/pre_align.yaml\")")
+  \"\${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/config/on_demand/modes/pre_align.yaml\"
+  \"\${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/config/on_demand/modes/speed_3.yaml\")")
 install(DIRECTORY ../config/ DESTINATION share/${PROJECT_NAME}/config FILES_MATCHING PATTERN "*.yaml")
 ament_package()
