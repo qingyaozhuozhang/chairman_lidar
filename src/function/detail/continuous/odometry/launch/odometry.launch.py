@@ -12,7 +12,7 @@ def generate_launch_description():
     poses = yaml.safe_load(config.read_text())['poses']
     if selected not in poses:
         raise ValueError('SELECTED_POSE 必须是 1、2、3、4')
-    params = dict(poses[selected], selected_pose=selected)
+    params = dict(poses[selected], selected_pose=selected, initialpose_publish_after_stable_count=0)
     return LaunchDescription([Node(
         package='odometry', executable='odometry_transform_math',
         name='odometry_transform_math_node', output='screen', parameters=[params],

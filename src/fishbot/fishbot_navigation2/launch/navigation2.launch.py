@@ -3,28 +3,9 @@ import launch
 import launch_ros
 from ament_index_python.packages import get_package_share_directory
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, ExecuteProcess, TimerAction
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.substitutions import Command, LaunchConfiguration
 import launch_ros.parameter_descriptions
-
-# =======================================================
-# 🚗 [快捷修改区] 通过读取环境变量获取用户选择的初始位置！
-# =======================================================
-# 默认使用 1，如果系统环境变量中有 SELECTED_POSE，则读取该值
-SELECTED_POSE = int(os.environ.get('SELECTED_POSE', '1'))
-
-# 定义 4 个固定的初始位姿预设，格式为: {编号: [INIT_X, INIT_Y, INIT_Z, INIT_W]}
-PRESET_POSES = {
-    1: [-5.080,  -1.500, -0.707, 0.707],  # 红_武馆
-    2: [5.915,   -5.457, 0.707,  0.707],  # 红_对抗
-    3: [-5.080,  1.500,  0.707, 0.707],   # 蓝_武馆
-    4: [5.915,   5.457,  -0.707, 0.707],  # 蓝_对抗
-}
-
-# 根据选择的编号，自动解析对应的 XYZW 坐标
-INIT_X, INIT_Y, INIT_Z, INIT_W = PRESET_POSES[SELECTED_POSE]
-# =======================================================
-
 
 def generate_launch_description():
     fishbot_navigation2_dir = get_package_share_directory('fishbot_navigation2')
@@ -33,21 +14,15 @@ def generate_launch_description():
     livox_ros_driver2_dir = get_package_share_directory('livox_ros_driver2')
     terrain_analysis_dir = get_package_share_directory('terrain_analysis')
     terrain_analysis_ext_dir = get_package_share_directory('terrain_analysis_ext')
+    gicp_dir = get_package_share_directory('small_gicp_relocalization')
 
     rviz_config_dir = os.path.join(fishbot_navigation2_dir, 'config', 'rviz', 'nav2_default_view.rviz')
     map_yaml_path = os.path.join(fishbot_navigation2_dir, 'maps', 'room.yaml')
-    pcd_file_path = os.path.join(fishbot_navigation2_dir, 'PCD', 'scans.pcd')
+    pcd_file_path = os.path.join(fishbot_navigation2_dir, 'PCD', 'final2.pcd')
     nav2_param_path = os.path.join(fishbot_navigation2_dir, 'config', 'nav2_params.yaml')
     urdf_path = os.path.join(fishbot_navigation2_dir, 'urdf', 'my_robot', 'my_robot.xacro')
 
     use_sim_time = LaunchConfiguration('use_sim_time', default='false')
-
-    init_pose_str = (
-        '{header: {frame_id: "map"}, pose: {pose: {'
-        'position: {x: %s, y: %s, z: 0.0}, '
-        'orientation: {x: 0.0, y: 0.0, z: %s, w: %s}}}}'
-        % (INIT_X, INIT_Y, INIT_Z, INIT_W)
-    )
 
     robot_description = launch_ros.parameter_descriptions.ParameterValue(
         Command(['xacro ', urdf_path]),
@@ -167,43 +142,10 @@ def generate_launch_description():
             }]
         ),
 
-        # 8. 启动 GICP 定位节点
-        launch_ros.actions.Node(
-            package='small_gicp_relocalization',
-            executable='small_gicp_relocalization_node',
-            name='small_gicp_relocalization',
-            remappings = [("/tf", "tf"), ("/tf_static", "tf_static")],  
-            parameters=[{
-                'num_threads': 16,
-                'num_neighbors': 10,
-                'global_leaf_size': 0.05,
-                'registered_leaf_size': 0.05,
-                'max_dist_sq': 4.0,
-                'map_frame': 'map1',
-                'odom_frame': 'odom1',
-                'base_frame': 'camera_init',
-                'lidar_frame': 'camera_init',
-                'robot_base_frame': 'base_footprint',
-                'prior_pcd_file': pcd_file_path,
-            }]
-        ),
-
-        # 将 GICP 的 map1 -> odom1 转发为 Nav2 使用的 map -> odom。
-        launch_ros.actions.Node(
-            package='small_gicp_relocalization',
-            executable='tf_relay_node',
-            name='tf_relay_node',
-            output='screen',
-            parameters=[{
-                'source_parent': 'map1',
-                'source_child': 'odom1',
-                'target_parent': 'map',
-                'target_child': 'odom',
-                'publish_rate_hz': 20.0,
-                'time_offset_sec': 0.1,
-                'init_pose': [-5.08, -1.5, 0.0, 0.0, 0.0, -1.5708],
-                'use_sim_time': use_sim_time,
-            }],
+        # 8. 根据 SELECTED_POSE 初始化 GICP，由同一节点持续发布 map -> odom。
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource([gicp_dir, '/launch', '/small_gicp_relocalization_launch.py']),
+            launch_arguments={'prior_pcd_file': pcd_file_path, 'use_sim_time': use_sim_time}.items(),
         ),
 
         # 9. 启动 Nav2 Map Server

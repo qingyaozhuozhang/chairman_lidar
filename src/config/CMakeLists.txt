@@ -9,6 +9,7 @@ install(CODE "file(REMOVE
   \"\${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/framework/on_demand/special.yaml\"
   \"\${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/framework/on_demand/modes/base.yaml\"
   \"\${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/framework/on_demand/modes/dynamic.yaml\"
-  \"\${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/framework/on_demand/modes/pre_align.yaml\")")
+  \"\${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/framework/on_demand/modes/pre_align.yaml\"
+  \"\${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/small_gicp_relocalization/localization.yaml\")")
 install(DIRECTORY fast_lio fishbot_navigation2 livox_ros_driver2 odometry framework DESTINATION share/${PROJECT_NAME})
 ament_package()

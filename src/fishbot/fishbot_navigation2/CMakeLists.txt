@@ -9,9 +9,14 @@ endif()
 find_package(ament_cmake REQUIRED)
 
 # 注意这里加上了 meshes 文件夹
-install(DIRECTORY launch urdf config maps PCD meshes
+install(DIRECTORY launch urdf config maps meshes
   DESTINATION share/${PROJECT_NAME}
 )
+install(DIRECTORY PCD DESTINATION share/${PROJECT_NAME}
+  PATTERN "base.pcd" EXCLUDE
+  PATTERN "scans.pcd" EXCLUDE
+)
+install(CODE "file(REMOVE \"\${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/PCD/scans.pcd\")")
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

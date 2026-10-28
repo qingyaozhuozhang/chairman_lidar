@@ -1,5 +1,18 @@
+# map 坐标系中 base_footprint 的启动位姿，位置单位 m，朝向使用 qz/qw。
+# lidar_init_* 为配置字段名；底盘与雷达的安装偏移由 TF 参与换算。
 poses:
-  1: {lidar_init_x: -5.082, lidar_init_y: -1.500, lidar_init_qz: -0.707, lidar_init_qw: 0.707}
+  1: {lidar_init_x: 0.0, lidar_init_y: 0.0, lidar_init_qz: 0.0, lidar_init_qw: 1.0}
   2: {lidar_init_x: 5.708, lidar_init_y: -5.257, lidar_init_qz: 0.707, lidar_init_qw: 0.707}
   3: {lidar_init_x: -5.082, lidar_init_y: 1.500, lidar_init_qz: 0.707, lidar_init_qw: 0.707}
   4: {lidar_init_x: 5.708, lidar_init_y: 5.257, lidar_init_qz: -0.707, lidar_init_qw: 0.707}
+
+# 建图点：这份 PCD 的坐标系原点在 map 中的位姿；切换启动点 1～4 时保持不变。
+# 初值采用 1 号点的位置和朝向，对应 PCD 零位姿；独立保存，不随启动点标定自动改变。
+# x/y/z 单位 m，roll/pitch/yaw 单位 rad。表示地图标定关系，不是当前底盘位姿。
+mapping_pose:
+  x: 0.0
+  y: 0.0
+  z: 0.0
+  roll: 0.0
+  pitch: 0.0
+  yaw: 0.0

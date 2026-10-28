@@ -100,3 +100,21 @@ less -R run_log/Navigation2_1.log
 ```
 
 在 `less` 中按 `q` 返回终端。
+
+
+点云裁减命令
+# 只裁剪，不降采样
+python3 tool/downsample_map.py base.pcd final.pcd \
+  --no-downsample \
+  --crop --crop-min-xy -1.65 -0.55 --crop-max-xy 4.5 11.5
+
+# 只降采样（原行为）
+python3 tool/downsample_map.py base.pcd final.pcd --voxel-size 0.05
+
+# 既裁剪又降采样
+python3 tool/downsample_map.py base.pcd final.pcd \
+  --voxel-size 0.05 \
+  --crop --crop-min-xy -1.65 -0.55 --crop-max-xy 4.5 11.5
+
+保存点云地图
+ros2 service call /map_save std_srvs/srv/Trigger

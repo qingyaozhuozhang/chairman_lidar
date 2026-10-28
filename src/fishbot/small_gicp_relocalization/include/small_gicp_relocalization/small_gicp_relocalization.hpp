@@ -16,7 +16,9 @@
 #define SMALL_GICP_RELOCALIZATION__SMALL_GICP_RELOCALIZATION_HPP_
 
 #include <memory>
+#include <mutex>
 #include <string>
+
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "pcl/io/pcd_io.h"
 #include "rclcpp/rclcpp.hpp"
@@ -44,43 +46,55 @@ private:
   void performRegistration();
   void publishTransform();
   void initialPoseCallback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
+  bool initializeFromPose(
+    const Eigen::Isometry3d & map_to_robot, const rclcpp::Time & stamp, bool force = false);
 
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pcd_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_pose_sub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr cropped_cloud_pub_;
 
   int num_threads_;
   int num_neighbors_;
-  float global_leaf_size_;
-  float registered_leaf_size_;
+  double map_leaf_size_;
   float max_dist_sq_;
 
   std::string map_frame_;
   std::string odom_frame_;
   std::string prior_pcd_file_;
-  std::string base_frame_;
   std::string robot_base_frame_;
-  std::string lidar_frame_;
-  std::string current_scan_frame_id_;
-  std::vector<double> init_pose_;          
-  std::string input_cloud_topic_; 
-  rclcpp::Time last_scan_time_;
+  std::string input_cloud_topic_;
+  double time_offset_;
+  Eigen::Isometry3d initial_map_pose_;
+  Eigen::Isometry3d map_to_pcd_;
+  // 同一个启动参考系分别在 map 和 PCD 中的位姿，初始化时一起设置。
+  Eigen::Isometry3d map_to_start_;
+  Eigen::Isometry3d pcd_to_start_;
   Eigen::Isometry3d result_t_;
-  Eigen::Isometry3d previous_result_t_;
+  bool initialized_{false};
+  bool matched_{false};
+  size_t consecutive_registration_failures_{0};
+  std::mutex transform_mutex_;
 
   pcl::PointCloud<pcl::PointXYZ>::Ptr global_map_;
-  pcl::PointCloud<pcl::PointXYZ>::Ptr registered_scan_;
   pcl::PointCloud<pcl::PointXYZ>::Ptr accumulated_cloud_;
+  pcl::PointCloud<pcl::PointXYZ>::Ptr accumulated_cloud_cropped_;
   pcl::PointCloud<pcl::PointCovariance>::Ptr target_;
   pcl::PointCloud<pcl::PointCovariance>::Ptr source_;
 
+  bool enable_cropped_{false};
+  double crop_x_min_{-1.65};
+  double crop_x_max_{4.50};
+  double crop_y_min_{-0.55};
+  double crop_y_max_{11.50};
+
   std::shared_ptr<small_gicp::KdTree<pcl::PointCloud<pcl::PointCovariance>>> target_tree_;
-  std::shared_ptr<small_gicp::KdTree<pcl::PointCloud<pcl::PointCovariance>>> source_tree_;
   std::shared_ptr<
-  small_gicp::Registration<small_gicp::GICPFactor, small_gicp::ParallelReductionOMP>>
+    small_gicp::Registration<small_gicp::GICPFactor, small_gicp::ParallelReductionOMP>>
     register_;
 
   rclcpp::TimerBase::SharedPtr transform_timer_;
   rclcpp::TimerBase::SharedPtr register_timer_;
+  rclcpp::CallbackGroup::SharedPtr transform_group_;
 
   std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
   std::unique_ptr<tf2_ros::TransformListener> tf_listener_;
