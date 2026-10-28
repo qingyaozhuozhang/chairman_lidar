@@ -384,9 +384,9 @@ geometry_msgs::msg::TwistStamped OmniPidPursuitController::computeVelocityComman
   }
 
   if (!isCollisionDetected(costmap_frame_local_plan)) {
-    cmd_vel.twist.linear.x = lin_vel_x;
+    cmd_vel.twist.linear.x = -lin_vel_x;
     cmd_vel.twist.linear.y = lin_vel_y;
-    cmd_vel.twist.angular.z = angular_vel;
+    cmd_vel.twist.angular.z = -angular_vel;
   } else {
     throw nav2_core::PlannerException("Collision detected in the trajectory. Stopping the robot!");
   }
