@@ -24,6 +24,7 @@
 #include "small_gicp_relocalization/map_preprocessing.hpp"
 #include "small_gicp_relocalization/pose_transform.hpp"
 #include "tf2_eigen/tf2_eigen.hpp"
+#include "small_gicp_relocalization/map_consistency.hpp"
 
 namespace small_gicp_relocalization
 {
@@ -51,6 +52,8 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   const double publish_rate = declare_parameter("publish_rate_hz", 20.0);
   const double registration_rate = declare_parameter("registration_rate_hz", 2.0);
   time_offset_ = declare_parameter("time_offset_sec", 0.1);
+  map_consistency_dist_ = declare_parameter("map_consistency_dist", 0.20);
+  map_consistency_min_ratio_ = declare_parameter("map_consistency_min_ratio", 0.20);
   if (
     map_frame_.empty() || odom_frame_.empty() || robot_base_frame_.empty() ||
     map_frame_ == odom_frame_ || map_frame_ == robot_base_frame_ ||
@@ -59,10 +62,12 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   }
   if (
     num_threads_ < 1 || num_neighbors_ < 3 || !std::isfinite(max_dist_sq_) || max_dist_sq_ <= 0.0 ||
+    !std::isfinite(map_consistency_dist_) || map_consistency_dist_ < 0.0 ||
+    !std::isfinite(map_consistency_min_ratio_) || map_consistency_min_ratio_ <= 0.0 || map_consistency_min_ratio_ > 1.0 ||
     !std::isfinite(publish_rate) || publish_rate <= 0.0 || publish_rate > 1000.0 ||
     !std::isfinite(registration_rate) || registration_rate <= 0.0 || registration_rate > 100.0 ||
     !std::isfinite(time_offset_) || time_offset_ < 0.0) {
-    throw std::invalid_argument("invalid GICP sampling, matching or timer parameters");
+    throw std::invalid_argument("invalid GICP sampling, matching, filtering or timer parameters");
   }
 
   tf_buffer_ = std::make_unique<tf2_ros::Buffer>(get_clock());
@@ -264,12 +269,14 @@ void SmallGicpRelocalizationNode::registeredPcdCallback(
 void SmallGicpRelocalizationNode::performRegistration()
 {
   Eigen::Isometry3d seed;
+  bool was_matched = false;
   {
     std::lock_guard<std::mutex> guard(transform_mutex_);
     if (!initialized_ || accumulated_cloud_->empty()) {
       return;
     }
     seed = result_t_;
+    was_matched = matched_; 
   }
   const auto registration_begin = std::chrono::steady_clock::now();
   if(enable_cropped_){
@@ -284,6 +291,33 @@ void SmallGicpRelocalizationNode::performRegistration()
     *accumulated_cloud_cropped_ = *accumulated_cloud_;
   }
   source_ = downsampleLivePoints(*accumulated_cloud_cropped_, map_leaf_size_);
+
+  // ========== 新增：地图一致性过滤 ==========
+  if (map_consistency_dist_ > 0.0 && !source_->empty()) {
+    const size_t before = source_->size();
+    auto filtered = filterByMapConsistency(
+      *source_, *target_tree_, seed, map_consistency_dist_);
+    const size_t after = filtered->size();
+    const double keep_ratio =
+      static_cast<double>(after) / static_cast<double>(before);
+
+    // 兜底机制：如果首次匹配前，发现保留点太少，说明 seed 可能偏了，不执行过滤
+    if (!was_matched && keep_ratio < map_consistency_min_ratio_) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 3000,
+        "地图一致性过滤仅保留 %.1f%%，低于 %.1f%%，本帧回退为原始点云；"
+        "请检查初始位姿或地图覆盖",
+        100.0 * keep_ratio, 100.0 * map_consistency_min_ratio_);
+    } else {
+      source_ = std::move(filtered);
+      RCLCPP_INFO_THROTTLE(
+        get_logger(), *get_clock(), 3000,
+        "地图一致性过滤：%zu -> %zu 点（保留 %.1f%%，阈值 %.3fm）",
+        before, after, 100.0 * keep_ratio, map_consistency_dist_);
+    }
+  }
+  // ==========================================
+
   accumulated_cloud_->clear();
   if (source_->size() < static_cast<size_t>(num_neighbors_)) {
     return;

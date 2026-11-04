@@ -87,6 +87,9 @@ private:
   double crop_y_min_{-0.55};
   double crop_y_max_{11.50};
 
+  double map_consistency_dist_{0.0};
+  double map_consistency_min_ratio_{0.2};
+  
   std::shared_ptr<small_gicp::KdTree<pcl::PointCloud<pcl::PointCovariance>>> target_tree_;
   std::shared_ptr<
     small_gicp::Registration<small_gicp::GICPFactor, small_gicp::ParallelReductionOMP>>
