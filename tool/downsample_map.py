@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""离线将 base.pcd 按体素质心降采样为 final.pcd，保留 PCD 坐标系。"""
+"""离线将 base.pcd 裁剪/降采样为 final.pcd，保留 PCD 坐标系。"""
 import argparse
 import math
 import os
@@ -23,6 +23,20 @@ def project_map_directory():
         if directory.is_dir():
             return directory
     raise ValueError("找不到项目地图目录，请显式指定输入和输出 PCD 路径")
+
+
+def crop_points_xy(points, min_xy, max_xy):
+    """按 XY 矩形区域裁剪点云，保留边界内的点。"""
+    points = np.asarray(points, dtype=np.float64)
+    if points.ndim != 2 or points.shape[1] != 3:
+        raise ValueError("点云必须为 N×3 的 XYZ 数组")
+    mask = (
+        (points[:, 0] >= min_xy[0])
+        & (points[:, 0] <= max_xy[0])
+        & (points[:, 1] >= min_xy[1])
+        & (points[:, 1] <= max_xy[1])
+    )
+    return points[mask]
 
 
 def downsample_points(points, leaf_size):
@@ -53,8 +67,9 @@ def downsample_points(points, leaf_size):
     return result
 
 
-def process_map(input_path, output_path, leaf_size=GLOBAL_LEAF_SIZE):
-    """读取有效 XYZ 并原子替换输出文件，输入地图始终保留。"""
+def process_map(input_path, output_path, leaf_size=GLOBAL_LEAF_SIZE,
+                crop_min_xy=None, crop_max_xy=None, downsample=True):
+    """读取有效 XYZ、可选裁剪、可选降采样并原子替换输出文件，输入地图始终保留。"""
     input_path, output_path = Path(input_path), Path(output_path)
     if input_path.resolve() == output_path.resolve():
         raise ValueError("输入和输出不能相同")
@@ -68,8 +83,20 @@ def process_map(input_path, output_path, leaf_size=GLOBAL_LEAF_SIZE):
         raise ValueError("缺少 open3d，请安装 python3-open3d 或使用已安装该模块的环境") from exc
     cloud = o3d.io.read_point_cloud(str(input_path))
     points = np.asarray(cloud.points)
-    finite_count = int(np.isfinite(points).all(axis=1).sum())
-    sampled = downsample_points(points, leaf_size)
+    total_count = len(points)
+    finite_mask = np.isfinite(points).all(axis=1)
+    finite_count = int(finite_mask.sum())
+    points = points[finite_mask]
+    cropped_count = len(points)
+    if crop_min_xy is not None and crop_max_xy is not None:
+        points = crop_points_xy(points, crop_min_xy, crop_max_xy)
+        cropped_count = len(points)
+        if len(points) == 0:
+            raise ValueError("裁剪后没有剩余有效点，请检查裁剪范围")
+    if downsample:
+        sampled = downsample_points(points, leaf_size)
+    else:
+        sampled = points
     result = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(sampled))
     descriptor, temporary = tempfile.mkstemp(
         prefix=f".{output_path.stem}_", suffix=".pcd", dir=output_path.parent
@@ -81,13 +108,15 @@ def process_map(input_path, output_path, leaf_size=GLOBAL_LEAF_SIZE):
         ):
             raise ValueError("点云写入失败")
         # PCD 注释兼容标准读取器，定位端据此使用相同体素边长处理实时扫描。
+        # 不降采样时写入一个占位体素值，保证定位节点仍能读取文件头。
+        header_leaf = leaf_size if downsample else GLOBAL_LEAF_SIZE
         output = Path(temporary)
         payload = output.read_bytes()
-        output.write_bytes(f"{VOXEL_HEADER} {leaf_size!r}\n".encode("ascii") + payload)
+        output.write_bytes(f"{VOXEL_HEADER} {header_leaf!r}\n".encode("ascii") + payload)
         os.replace(temporary, output_path)
     finally:
         Path(temporary).unlink(missing_ok=True)
-    return len(points), finite_count, len(sampled)
+    return total_count, finite_count, cropped_count, len(sampled)
 
 
 def main(args=None):
@@ -102,11 +131,47 @@ def main(args=None):
         default=GLOBAL_LEAF_SIZE,
         help=f"地图体素边长，单位 m，默认 {GLOBAL_LEAF_SIZE}",
     )
+    parser.add_argument(
+        "--crop",
+        action="store_true",
+        help="按 XY 矩形区域裁剪地图（需同时提供 --crop-min-xy 和 --crop-max-xy）",
+    )
+    parser.add_argument(
+        "--crop-min-xy",
+        type=float,
+        nargs=2,
+        metavar=("XMIN", "YMIN"),
+        help="裁剪区域最小 XY（包含边界）",
+    )
+    parser.add_argument(
+        "--crop-max-xy",
+        type=float,
+        nargs=2,
+        metavar=("XMAX", "YMAX"),
+        help="裁剪区域最大 XY（包含边界）",
+    )
+    parser.add_argument(
+        "--no-downsample",
+        action="store_true",
+        help="只裁剪/过滤，不进行体素降采样",
+    )
     options = parser.parse_args(args)
     if (options.input is None) != (options.output is None):
         parser.error("自定义路径时必须同时提供输入和输出文件")
     if not math.isfinite(options.leaf_size) or options.leaf_size <= 0:
         parser.error("--global-leaf-size 必须是正有限数")
+    crop_min_xy = crop_max_xy = None
+    if options.crop:
+        if options.crop_min_xy is None or options.crop_max_xy is None:
+            parser.error("--crop 需同时提供 --crop-min-xy 和 --crop-max-xy")
+        crop_min_xy = tuple(options.crop_min_xy)
+        crop_max_xy = tuple(options.crop_max_xy)
+        if not all(math.isfinite(v) for v in crop_min_xy + crop_max_xy):
+            parser.error("裁剪范围必须是有限数")
+        if crop_min_xy[0] > crop_max_xy[0] or crop_min_xy[1] > crop_max_xy[1]:
+            parser.error("裁剪范围最小值不能大于最大值")
+    elif options.crop_min_xy is not None or options.crop_max_xy is not None:
+        parser.error("使用 --crop-min-xy/--crop-max-xy 时必须加 --crop")
     begin = time.monotonic()
     try:
         if options.input is None:
@@ -116,18 +181,37 @@ def main(args=None):
                 directory / "final.pcd",
             )
         print(
-            f"输入：{options.input}\n输出：{options.output}\n体素边长：{options.leaf_size} m",
+            f"输入：{options.input}\n输出：{options.output}\n"
+            f"体素边长：{options.leaf_size} m\n"
+            f"降采样：{'否' if options.no_downsample else '是'}",
             flush=True,
         )
-        total, finite, sampled = process_map(
-            options.input, options.output, options.leaf_size
+        if options.crop:
+            print(
+                f"裁剪范围：X [{crop_min_xy[0]}, {crop_max_xy[0]}]，"
+                f"Y [{crop_min_xy[1]}, {crop_max_xy[1]}]",
+                flush=True,
+            )
+        total, finite, cropped, sampled = process_map(
+            options.input,
+            options.output,
+            options.leaf_size,
+            crop_min_xy,
+            crop_max_xy,
+            downsample=not options.no_downsample,
         )
     except (ValueError, OSError, RuntimeError) as exc:
         parser.error(str(exc))
-    print(
-        f"降采样完成：{total} 点（有效 {finite}）→ {sampled} 点；"
-        f"耗时 {time.monotonic() - begin:.2f}s"
-    )
+    if options.crop:
+        print(
+            f"处理完成：{total} 点（有效 {finite}，裁剪后 {cropped}）→ {sampled} 点；"
+            f"耗时 {time.monotonic() - begin:.2f}s"
+        )
+    else:
+        print(
+            f"处理完成：{total} 点（有效 {finite}）→ {sampled} 点；"
+            f"耗时 {time.monotonic() - begin:.2f}s"
+        )
     print("构建 fishbot_navigation2 并重新加载环境后，重启 Navigation2 使用新地图。")
 
 

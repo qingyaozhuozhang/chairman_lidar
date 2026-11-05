@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>custom_msg</name>
+  <name>custom_msg1</name>
   <version>0.1.0</version>
   <description>Existing navigation and lower-controller wire interfaces</description>
   <maintainer email="chairman@example.com">chairman</maintainer>

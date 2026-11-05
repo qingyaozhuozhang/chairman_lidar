@@ -87,14 +87,14 @@ def test_partial_batch_times_out_and_can_restart():
 def test_point_write_preserves_format_orientation_metadata_and_other_team(tmp_path, pose_text):
     path = tmp_path / 'points.yaml'
     original = ('# header\nred:\n  1:\n    name: "点位 # 1"\n' + pose_text
-                + '    mode: 1\nblue:\n  1: {name: 蓝方, pose: [0, 0, 0, 1], mode: 2}\n')
+                + '    mode: 3\nblue:\n  1: {name: 蓝方, pose: [0, 0, 0, 1], mode: 2}\n')
     path.write_text(original)
     point.update_point_xy(path, 'red', 1, 3.1234, -4.5678)
     assert path.read_text() == original.replace('-1.000', '3.123').replace('2.000', '-4.568')
     assert list(tmp_path.iterdir()) == [path]
 
 
-def test_real_project_points_and_regions_change_only_selected_coordinates(tmp_path):
+def test_real_project_points_change_only_selected_coordinates(tmp_path):
     points = tmp_path / 'points.yaml'
     points.write_bytes((ROOT / point.POINTS_PATH).read_bytes())
     before = yaml.safe_load(points.read_text())
@@ -102,15 +102,6 @@ def test_real_project_points_and_regions_change_only_selected_coordinates(tmp_pa
     expected = deepcopy(before)
     expected['blue'][3]['pose'][:2] = [1.25, -2.5]
     assert yaml.safe_load(points.read_text()) == expected
-    regions = tmp_path / 'regions.yaml'
-    regions.write_bytes((ROOT / point.REGIONS_PATH).read_bytes())
-    before_text = regions.read_text()
-    expected = yaml.safe_load(before_text)
-    point.update_region_center(regions, 'red', 2, 1.5, 2.5)
-    selected = next(x for x in expected['regions_red'] if x['id'] == 2)
-    selected.update(x_min=0.9, x_max=2.1, y_min=1.9, y_max=3.1)
-    assert yaml.safe_load(regions.read_text()) == expected
-    assert regions.read_text().startswith(before_text.splitlines()[0])
 
 
 def test_dynamic_points_and_nonfinite_values_do_not_write(tmp_path):
@@ -118,7 +109,7 @@ def test_dynamic_points_and_nonfinite_values_do_not_write(tmp_path):
     original = (ROOT / point.POINTS_PATH).read_text()
     path.write_text(original)
     with pytest.raises(ValueError, match='动态目标'):
-        point.update_point_xy(path, 'red', 15, 1.0, 2.0)
+        point.update_point_xy(path, 'red', 16, 1.0, 2.0)
     with pytest.raises(ValueError, match='有限数值'):
         point.update_point_xy(path, 'red', 1, math.inf, 2.0)
     assert path.read_text() == original
@@ -129,60 +120,47 @@ def test_workspace_search_is_local_and_explicit_path_does_not_fall_back(tmp_path
     monkeypatch.delenv('POINT_WORKSPACE', raising=False)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(Path, 'rglob', lambda *_: pytest.fail('Must not scan the filesystem recursively'))
-    assert point.resolve_project_files() == (ROOT / point.POINTS_PATH, ROOT / point.REGIONS_PATH)
+    assert point.resolve_project_files() == (ROOT / point.POINTS_PATH, ROOT / point.INITIAL_POSES_PATH)
     with pytest.raises(FileNotFoundError):
         point.resolve_project_files(tmp_path)
 
 
-def calibration_workspace(root, is_region):
+def calibration_workspace(root):
     point_text = ('# points\nred:\n'
                   '  14: {name: 目标, pose: [0.000, 0.000, -0.707, 0.707], mode: 1}\n'
                   'blue:\n  14: {name: 蓝方, pose: [9, 8, 0, 1], mode: 2}\n')
-    region_text = ('# regions\nregions_red:\n'
-                   '  - {id: 14, name: 区域, x_min: 0, x_max: 1, y_min: 0, y_max: 1}\n'
-                   'regions_blue:\n  - {id: 14, x_min: 9, x_max: 10, y_min: 8, y_max: 9}\n')
-    sources = {
-        False: ('src/config/framework/on_demand/points.yaml',
-                'src/function/config/on_demand/points.yaml'),
-        True: ('src/config/odometry/regions.yaml',
-               'src/function/detail/continuous/odometry/config/regions.yaml'),
-    }
-    for mode, paths in sources.items():
-        for index, relative in enumerate(paths):
-            path = root / relative
-            path.parent.mkdir(parents=True, exist_ok=True)
-            text = region_text if mode else point_text
-            path.write_text(f'# source {index}\n' + text, encoding='utf-8')
-    package, relative = ('odometry', 'regions.yaml') if is_region else ('framework', 'on_demand/points.yaml')
+    sources = ('src/config/framework/on_demand/points.yaml',
+               'src/function/config/on_demand/points.yaml')
+    for index, relative in enumerate(sources):
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f'# source {index}\n' + point_text, encoding='utf-8')
+    package, relative = 'framework', 'on_demand/points.yaml'
     installed = [root / 'install' / prefix / 'share' / package / 'config' / relative
                  for prefix in (package, '')]
     for path in installed:
         path.parent.mkdir(parents=True, exist_ok=True)
         # An invalid installed YAML must not interfere with source calibration.
         path.write_text('installed: [must remain untouched\n', encoding='utf-8')
-    return [root / name for name in sources[is_region]], installed
+    return [root / name for name in sources], installed
 
 
-def calibrate_from_menu(root, is_region, monkeypatch):
+def calibrate_from_menu(root, monkeypatch):
     monkeypatch.setenv('POINT_WORKSPACE', str(root))
     answers = iter(['r', '14', '', 'b', 'b'])
     monkeypatch.setattr('builtins.input', lambda _: next(answers))
     collector = SimpleNamespace(elapsed=0.1, collect_next_average=lambda _: sample(1.25))
-    path = root / (point.REGIONS_PATH if is_region else point.POINTS_PATH)
-    point.run_mode(collector, path, is_region, 5.0)
+    path = root / point.POINTS_PATH
+    point.run_mode(collector, path, 5.0)
 
 
-@pytest.mark.parametrize('is_region', [False, True])
-def test_menu_updates_both_sources_and_leaves_install_untouched(tmp_path, monkeypatch, is_region):
-    sources, installed = calibration_workspace(tmp_path, is_region)
+def test_menu_updates_both_sources_and_leaves_install_untouched(tmp_path, monkeypatch):
+    sources, installed = calibration_workspace(tmp_path)
     before = {path: path.read_text() for path in sources + installed}
-    calibrate_from_menu(tmp_path, is_region, monkeypatch)
+    calibrate_from_menu(tmp_path, monkeypatch)
     for path in sources:
         expected = yaml.safe_load(before[path])
-        if is_region:
-            expected['regions_red'][0].update(x_min=0.65, x_max=1.85, y_min=-1.85, y_max=-0.65)
-        else:
-            expected['red'][14]['pose'][:2] = [1.25, -1.25]
+        expected['red'][14]['pose'][:2] = [1.25, -1.25]
         assert yaml.safe_load(path.read_text()) == expected
         assert path.read_text().splitlines()[:2] == before[path].splitlines()[:2]
         assert not (path.parent / '.point_backups').exists()
@@ -191,20 +169,18 @@ def test_menu_updates_both_sources_and_leaves_install_untouched(tmp_path, monkey
     assert not list((tmp_path / 'install').rglob('.point_backups'))
 
 
-@pytest.mark.parametrize('is_region', [False, True])
-def test_invalid_source_copy_prevents_all_writes(tmp_path, monkeypatch, capsys, is_region):
-    sources, installed = calibration_workspace(tmp_path, is_region)
+def test_invalid_source_copy_prevents_all_writes(tmp_path, monkeypatch, capsys):
+    sources, installed = calibration_workspace(tmp_path)
     sources[1].write_text(sources[1].read_text().replace('14', '13'))
     before = {path: path.read_bytes() for path in sources + installed}
-    calibrate_from_menu(tmp_path, is_region, monkeypatch)
+    calibrate_from_menu(tmp_path, monkeypatch)
     assert '本次标定未完成' in capsys.readouterr().out
     assert all(path.read_bytes() == original for path, original in before.items())
     assert not list(tmp_path.rglob('.point_backups'))
 
 
-@pytest.mark.parametrize('is_region', [False, True])
-def test_second_source_write_failure_restores_first_source(tmp_path, monkeypatch, capsys, is_region):
-    sources, installed = calibration_workspace(tmp_path, is_region)
+def test_second_source_write_failure_restores_first_source(tmp_path, monkeypatch, capsys):
+    sources, installed = calibration_workspace(tmp_path)
     before = {path: path.read_bytes() for path in sources + installed}
     replace = os.replace
     failed = False
@@ -217,7 +193,7 @@ def test_second_source_write_failure_restores_first_source(tmp_path, monkeypatch
         return replace(source, target)
 
     monkeypatch.setattr(point.os, 'replace', fail_once)
-    calibrate_from_menu(tmp_path, is_region, monkeypatch)
+    calibrate_from_menu(tmp_path, monkeypatch)
     assert failed
     assert '本次标定未完成' in capsys.readouterr().out
     assert all(path.read_bytes() == original for path, original in before.items())
@@ -225,31 +201,32 @@ def test_second_source_write_failure_restores_first_source(tmp_path, monkeypatch
 
 
 def test_unchanged_central_point_still_updates_source_copy(tmp_path, monkeypatch):
-    sources, _ = calibration_workspace(tmp_path, False)
+    sources, _ = calibration_workspace(tmp_path)
     sources[0].write_text(sources[0].read_text().replace('[0.000, 0.000,', '[1.250, -1.250,'))
-    calibrate_from_menu(tmp_path, False, monkeypatch)
+    calibrate_from_menu(tmp_path, monkeypatch)
     assert yaml.safe_load(sources[1].read_text())['red'][14]['pose'][:2] == [1.25, -1.25]
     assert not (sources[0].parent / '.point_backups').exists()
 
 
 def test_source_symlink_into_install_is_rejected(tmp_path, monkeypatch, capsys):
-    sources, installed = calibration_workspace(tmp_path, False)
+    sources, installed = calibration_workspace(tmp_path)
     installed[0].write_bytes(sources[1].read_bytes())
     sources[1].unlink()
     sources[1].symlink_to(installed[0])
     before = {path: path.read_bytes() for path in sources + installed}
-    calibrate_from_menu(tmp_path, False, monkeypatch)
+    calibrate_from_menu(tmp_path, monkeypatch)
     assert '本次标定未完成' in capsys.readouterr().out
     assert all(path.read_bytes() == original for path, original in before.items())
     assert not list(tmp_path.rglob('.point_backups'))
 
 
 def startup_workspace(root):
-    calibration_workspace(root, False)
+    calibration_workspace(root)
     sources = [root / 'src/config/odometry/initial_poses.yaml',
                root / 'src/function/detail/continuous/odometry/config/initial_poses.yaml']
     original = (ROOT / 'src/config/odometry/initial_poses.yaml').read_text()
     for index, path in enumerate(sources):
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f'# source {index}\n' + original)
     installed = root / 'install/odometry/share/odometry/config/initial_poses.yaml'
     installed.parent.mkdir(parents=True, exist_ok=True)

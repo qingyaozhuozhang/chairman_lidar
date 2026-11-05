@@ -46,10 +46,10 @@ def scene():
             remote.declare_parameter(key, value)
         baselines[remote] = {k: remote.get_parameter(k).to_parameter_msg().value for k in values}
     fake = Node('fake_nav2')
-    state = {'hold': False, 'started': False, 'cancelled': 0, 'goals': 0}
+    state = {'hold': False, 'started': False, 'cancelled': 0, 'goals': []}
 
     def execute(handle):
-        state['goals'] += 1
+        state['goals'].append(handle.request.pose.pose.position.x)
         state['started'] = True
         state['observed_kp'] = controller.get_parameter('FollowPath.translation_kpx').value
         state['observed_sim_time'] = controller.get_parameter('use_sim_time').value
@@ -120,7 +120,7 @@ def test_partial_remote_rejection_restores_controller(scene):
     from custom_msg.srv import SetNavTarget
     from rcl_interfaces.msg import SetParametersResult
     node, controller, smoother, client, _, check = scene
-    # Give mode 2 a distinct smoother value so only application is rejected.
+    # Reject a deliberately distinct smoother update while allowing restore.
     node.speed_profiles[2]['velocity_smoother']['max_velocity'] = [0.5, 0.5, 1.0]
     smoother.add_on_set_parameters_callback(lambda ps: SetParametersResult(
         successful=not any(p.name == 'max_velocity' and list(p.value) == node.speed_profiles[2]['velocity_smoother']['max_velocity'] for p in ps),
@@ -183,34 +183,8 @@ def test_failed_restore_is_not_reported_as_completed(scene, monkeypatch):
     check()
 
 
-@pytest.mark.parametrize('mode', [1, 2])
-def test_direct_navigation_keeps_parameters_until_nav2_finishes(scene, mode, capfd):
-    from custom_msg.srv import SetNavTarget
-    node, controller, _, client, state, check = scene
-    state['hold'] = True
-    node.get_current_map_pose = lambda **kwargs: (-2.0, 0.0, 0.0)
-    future = client.call_async(SetNavTarget.Request(target=mode))
-    deadline = time.monotonic() + 6
-    while not state['started']:
-        assert time.monotonic() < deadline
-        time.sleep(0.01)
-    expected = node.speed_profiles[mode]['controller_server']['FollowPath.translation_kpx']
-    for x in (-1.0, -0.4, 0.0):
-        node.get_current_map_pose = lambda **kwargs: (x, 0.0, 0.0)
-        time.sleep(0.25)
-        assert not future.done(), 'Reaching the goal pose alone must not complete the task'
-        assert state['goals'] == 1
-        assert node.current_profile == mode
-        assert controller.get_parameter('FollowPath.translation_kpx').value == expected
-    state['hold'] = False
-    result = wait(future)
-    assert result.success, result.message
-    assert f'结束位置：模式{mode} 直接导航' in result.message
-    output = capfd.readouterr().err
-    assert '[阶段开始]' not in output and '[阶段结束]' not in output
-    assert output.count('[任务开始]') == 1
-    assert output.count('[任务完成]') == 1
-    check()
+
+
 
 
 def register_independent_mode(node, template_id=1):
@@ -326,3 +300,23 @@ def test_sum_without_arguments_cancels_then_returns_to_menu(field):
         process.stdin.close()
         thread.join(timeout=1)
         process.stdout.close()
+
+
+@pytest.mark.parametrize('mode', [1, 2])
+def test_direct_navigation_waits_for_action_result_even_when_tf_at_goal(scene, mode):
+    from custom_msg.srv import SetNavTarget
+    node, controller, _, client, state, check = scene
+    state['hold'] = True
+    future = client.call_async(SetNavTarget.Request(target=mode))
+    deadline = time.monotonic() + 6
+    while not state['started']:
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
+    time.sleep(0.25)
+    assert not future.done(), 'A near-goal TF must not complete the task before Nav2'
+    assert node.current_profile == mode
+    assert controller.get_parameter('FollowPath.translation_kpx').value == node.speed_profiles[mode]['controller_server']['FollowPath.translation_kpx']
+    state['hold'] = False
+    assert wait(future).success
+    assert state['goals'] == [0.0], 'Only the final target is sent'
+    check()

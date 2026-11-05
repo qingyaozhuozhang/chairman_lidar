@@ -89,7 +89,7 @@ def main(args=None):
         epilog='--files 后填写相对 src/config 的文件路径，多个文件用空格分隔。')
     selection = parser.add_mutually_exclusive_group(required=True)
     selection.add_argument('--all', action='store_true', help='覆盖 manifest.json 登记的全部配置')
-    selection.add_argument('--files', nargs='+', help='覆盖指定文件，如 fast_lio/mid360.yaml odometry/regions.yaml')
+    selection.add_argument('--files', nargs='+', help='覆盖指定文件，如 fast_lio/mid360.yaml odometry/initial_poses.yaml')
     options = parser.parse_args(args)
     try:
         root = workspace_root()

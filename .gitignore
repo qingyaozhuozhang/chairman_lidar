@@ -1,11 +1,5 @@
 /build/
 /install/
 /log/
-/.configuration_backups/
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.point_backups/
-
 # PCD 点云地图
 *.[pP][cC][dD]

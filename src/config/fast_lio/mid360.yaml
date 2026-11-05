@@ -14,7 +14,7 @@
         self_filter_body_box: [-1.20, 0.10, -0.50, 0.50, -0.35, 0.35]
         self_filter_arm_box: [-0.35, 0.45, -0.35, 0.35, 0.00, 0.90]
 
-        map_file_path: "./test.pcd"
+        map_file_path: "/home/hurricane/RC27/3/chairman_lidar/src/fishbot/fast_lio/PCD/test.pcd"
 
         common:
             lid_topic:  "/livox/lidar"

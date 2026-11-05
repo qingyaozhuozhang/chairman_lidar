@@ -84,7 +84,7 @@ double time_diff_lidar_to_imu = 0.0;
 mutex mtx_buffer;
 condition_variable sig_buffer;
 
-string root_dir = ROOT_DIR;
+string root_dir = "/home/hurricane/RC27/3/chairman_lidar/src/fishbot/fast_lio/";
 string map_file_path, lid_topic, imu_topic;
 
 double res_mean_last = 0.05, total_residual = 0.0;
@@ -532,7 +532,7 @@ void publish_frame_world(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::Share
         if (pcl_wait_save->size() > 0 && pcd_save_interval > 0  && scan_wait_num >= pcd_save_interval)
         {
             pcd_index ++;
-            string all_points_dir(string(string(ROOT_DIR) + "PCD/scans_") + to_string(pcd_index) + string(".pcd"));
+            string all_points_dir("/home/hurricane/RC27/3/chairman_lidar/src/fishbot/fast_lio/PCD/scans_" + to_string(pcd_index) + string(".pcd"));
             pcl::PCDWriter pcd_writer;
             cout << "current scan saved to /PCD/" << all_points_dir << endl;
             pcd_writer.writeBinary(all_points_dir, *pcl_wait_save);
@@ -1181,7 +1181,7 @@ int main(int argc, char** argv)
     if (pcl_wait_save->size() > 0 && pcd_save_en)
     {
         string file_name = string("scans.pcd");
-        string all_points_dir(string(string(ROOT_DIR) + "PCD/") + file_name);
+        string all_points_dir("/home/hurricane/RC27/3/chairman_lidar/src/fishbot/fast_lio/PCD/scans_" + file_name);
         pcl::PCDWriter pcd_writer;
         cout << "current scan saved to /PCD/" << file_name<<endl;
         pcd_writer.writeBinary(all_points_dir, *pcl_wait_save);

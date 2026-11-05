@@ -6,6 +6,7 @@ ament_python_install_package(${PROJECT_NAME} PACKAGE_DIR "${CMAKE_CURRENT_SOURCE
 install(PROGRAMS resource/sync DESTINATION lib/${PROJECT_NAME})
 install(FILES manifest.json DESTINATION share/${PROJECT_NAME})
 install(CODE "file(REMOVE
+  \"\${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/odometry/regions.yaml\"
   \"\${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/framework/on_demand/special.yaml\"
   \"\${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/framework/on_demand/modes/base.yaml\"
   \"\${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/framework/on_demand/modes/dynamic.yaml\"

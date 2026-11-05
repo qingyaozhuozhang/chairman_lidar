@@ -21,8 +21,7 @@ src/config/                              # 中央参数配置入口，使用 syn
 │   └── rviz/*.rviz
 ├── livox_ros_driver2/                    # MID360 网络配置及其他型号配置
 └── odometry/
-    ├── initial_poses.yaml               # 四个启动位置的初始位姿
-    └── regions.yaml                     # 红蓝区域边界
+    └── initial_poses.yaml               # 四个启动位置的初始位姿
 src/function/
 ├── config/on_demand/                    
 └── detail/continuous/
@@ -66,7 +65,6 @@ ros2 run chairman_config sync --all
 ```bash
 ros2 run chairman_config sync --files fast_lio/mid360.yaml
 ros2 run chairman_config sync --files framework/on_demand/points.yaml framework/on_demand/modes/speed_2.yaml
-ros2 run chairman_config sync --files fishbot_navigation2/nav2_params.yaml odometry/regions.yaml
 ```
 
 `--files` 后填写相对于 `src/config/` 的名称，多个文件用空格分隔。
@@ -87,11 +85,8 @@ ros2 run chairman_config sync --files fishbot_navigation2/nav2_params.yaml odome
 | `fishbot_navigation2/nav2_params.yaml` | `src/fishbot/fishbot_navigation2/config/nav2_params.yaml` |
 | `livox_ros_driver2/MID360_config.json` | `src/fishbot/livox_ros_driver2/config/MID360_config.json` |
 | `odometry/initial_poses.yaml` | `src/function/detail/continuous/odometry/config/initial_poses.yaml` |
-| `odometry/regions.yaml` | `src/function/detail/continuous/odometry/config/regions.yaml` |
 | `framework/on_demand/points.yaml` | `src/function/config/on_demand/points.yaml` |
 | `framework/on_demand/functions.yaml` | `src/function/config/on_demand/functions.yaml` |
-| `framework/on_demand/modes/speed_1.yaml` | `src/function/config/on_demand/modes/speed_1.yaml` |
-| `framework/on_demand/modes/speed_2.yaml` | `src/function/config/on_demand/modes/speed_2.yaml` |
 | `framework/on_demand/modes/special.yaml` | `src/function/config/on_demand/modes/special.yaml` |
 
 
@@ -124,7 +119,7 @@ red:
     mode: 1
 ```
 
-`pose` 为地图系 `[x, y, qz, qw]`；x/y 单位米，qz/qw 为朝向四元数。`mode` 对应 `modes/*.yaml` 的 `id`。红方使用 `red`，蓝方使用 `blue`；两方坐标分别填写。不要修改 15/16 的空坐标来代替它们的动态目标算法。
+`pose` 为地图系 `[x, y, qz, qw]`；x/y 单位米，qz/qw 为朝向四元数。`mode` 对应 `modes/*.yaml` 的 `id`。红方使用 `red`，蓝方使用 `blue`；两方坐标分别填写。不要修改 16 的空坐标来代替它们的动态目标算法。
 
 使用 `ros2 run tool point` 实车标定时，工具同时修改中央文件与 `src/function/config/on_demand/points.yaml` 中选中点位的 x/y，保留各自的朝向、名称、模式和注释。
 
@@ -153,11 +148,11 @@ red:
 | -3/-4 定距移动 | `distance: 0.40`，单位米 | `special/shift_right/task.py`、`special/move_forward/task.py` |
 | -2 上坡 | `distance: 2.0`，单位米 | `special/uphill/task.py` |
 | -7/-8/-10 登阶 | `speed: 0.20`，单位 m/s | `special/stair_forward/task.py`、`special/stair_backward/task.py`、`special/stair_left/task.py` |
-| 15/16 动态目标导航 | `mode: 1` | `special/align_region/task.py`、`special/kfs_navigation/task.py` |
+| 16 动态目标导航 | `mode: 1` | `special/kfs_navigation/task.py` |
 
 表中实现路径均以 `src/function/detail/on_demand/` 开头。
 
-15/16 的动态目标入口、普通定点及 `ctx.go_to_pose()` 共用单段导航；`mode` 选择快速档或慢速档参数，目标计算方式由各功能入口决定。
+16 号功能的 `mode` 选择速度参数组，同样执行单段导航。
 
 ### 3.3 改内置速度模式
 
@@ -166,9 +161,9 @@ red:
 | 1 | `src/config/framework/on_demand/modes/speed_1.yaml` | 快速档，直接导航 |
 | 2 | `src/config/framework/on_demand/modes/speed_2.yaml` | 慢速档，直接导航 |
 
-两份文件均完整列出本档使用的 `controller_server` 与 `velocity_smoother` 参数块，节点层级及数组格式与 `nav2_params.yaml` 一致。`id` 供点位的 `mode` 引用，`name` 用于菜单显示；`parameters` 下是本档独立使用的 Nav2 参数树。两档采用相同的导航算法，只通过参数值区分。
+两份文件均完整列出 `controller_server` 与 `velocity_smoother`，名称、节点层级及数组格式与 `nav2_params.yaml` 一致。`id` 供点位的 `mode` 引用，`name` 用于菜单显示；`parameters` 下是本模式独立使用的 Nav2 参数树。每个文件的参数值只作用于自身。
 
-例如把模式 1 的线速度上限改为 0.4 m/s，应在现有 `FollowPath` 块调整 `v_linear_minx: -0.4`、`v_linear_maxx: 0.4`、`v_linear_miny: -0.4`、`v_linear_maxy: 0.4`，同时修改该文件的完整平滑器块：
+例如把模式 1 的线速度上限改为 0.4 m/s，应在现有 `FollowPath` 块调整 `v_linear_minx/miny: -0.4`、`v_linear_maxx/maxy: 0.4`，同时修改该文件的完整平滑器块：
 
 ```yaml
 parameters:
@@ -203,15 +198,13 @@ parameters:
 | `velocity_smoother` 的 `max_velocity/min_velocity` | 平滑器各轴速度限制 |
 | `velocity_smoother` 的 `max_accel/max_decel` | 平滑器各轴加速与制动限制 |
 
-当前快速档的 X/Y 速度范围为 ±1.5 m/s，慢速档为 ±0.5 m/s。两档均使用各自的 PID、目标容差和末端减速参数，目标由 Nav2 持续跟踪到完成。
-
-控制器限速和速度平滑器限速作用于不同环节。当前两档的平滑器 `max_velocity` 均为 `[3.0, 3.0, 2.5]`，慢速档的平移限制由控制器的 X/Y 上限 0.5 m/s 提供。调速时应同时核对控制器各轴限速、末端减速值和平滑器限制。
+快速档 X/Y 线速度上限为 1.5 m/s，慢速档为 0.5 m/s。两档平滑器 `max_velocity` 均为 `[3.0, 3.0, 2.5]`，慢速档的平移限速由控制器 X/Y 参数提供；调速时应同时核对控制器限速、末端减速值和平滑器配置。
 
 ### 3.4 新增跑定点模式参数
 
 新增模式可复制 `docs/templates/speed_mode.yaml` 或现有速度模式文件，设置唯一 `id` 和显示用 `name`，保留完整节点块后调整参数。点位选择 `mode: 4` 时，只使用编号 4 文件中的配置；修改其他模式不会改变本模式的值。创建文件、登记同步映射和点位引用的步骤见[新增速度模式](function_development.md#4-增加新的速度模式)。
 
-模式文件顶层只包含 `id`、`name`、`parameters`。所有模式全程使用本文件的一组参数，直接发送最终目标并等待结果。新增已有 Nav2 参数时，在对应节点的完整参数块中填写原参数名及正确类型；未列出的参数保持当前运行值。
+模式文件由 `id`、`name`、`parameters` 组成。所有模式共用直接导航流程，每次执行只使用所选模式的参数。新增已有 Nav2 参数时，在对应节点的完整参数块中填写原参数名及正确类型；未列出的参数保持当前运行值。
 
 模式切换只更新运行期间可修改的参数：
 
@@ -227,7 +220,7 @@ parameters:
 一次导航片段按以下顺序处理参数：
 
 1. 读取本次将修改的运行参数并保存原值。
-2. 设置所选模式的参数，发送最终目标并等待 Nav2 结果。
+2. 设置所选模式，并在整个导航片段中使用同一组参数；任务结束恢复本次记录的原值。
 3. 目标完成、失败或取消后，确认 Nav2 动作结束。
 4. 恢复原值并读回核对，成功后允许组合任务继续下一步。
 
@@ -391,29 +384,11 @@ ros2 run chairman_config sync --files odometry/initial_poses.yaml
 
 同步后重启 Navigation2 与 odometry，并使用同一场地编号。启动时应将小车放在对应点位且朝向一致，等待 `[定位就绪] GICP 首次配准收敛` 后核对 RViz 位姿。仅修改磁盘文件不会重置已经运行的定位节点。
 
-### 6.2 红蓝区域边界
+### 6.2 红蓝点位显示
 
-文件：**`src/config/odometry/regions.yaml`**。例如修改 `regions_red` 中已有 id=1 的边界，保留其他区域：
+红蓝点位使用 `src/function/config/on_demand/points.yaml` 中的 `red`、`blue` 坐标，在 RViz 的 `Navigation Points` 图层同时显示。`points_visualizer` 由 odometry launch 启动，每秒检查配置变化；定点标定保存后无需重启显示节点。动态目标的空坐标不显示，坐标单位 m，参考系为 `map`。
 
-```yaml
-regions_red:
-  - id: 1
-    name: 梅林入口
-    x_min: -3.60
-    x_max: -2.40
-    y_min: -4.80
-    y_max: -1.20
-```
-
-蓝方改 `regions_blue`。坐标为地图系米，保持 min < max 和区域编号的既有含义。15 号任务使用 id 1～13 查找当前区域并计算中心；odometry 在区域类型切换时更新代价地图膨胀参数。
-
-```bash
-ros2 run chairman_config sync --files odometry/regions.yaml
-```
-
-odometry 和 `sum` 都会读取区域配置，因此都要重启。
-
-使用 `ros2 run tool point` 标定区域中心时，工具同时修改中央文件与 `src/function/detail/continuous/odometry/config/regions.yaml`，将选中区域的边界设为平均位置 x/y 各向外扩展 0.6 m。
+odometry 负责地图位姿输出与点位显示，不按区域调整代价地图。膨胀半径由 `nav2_params.yaml` 中局部、全局代价地图各自的 `inflation_layer.inflation_radius` 配置，修改后同步并重启 Navigation2。
 
 ## 7. 导航 launch、地图与 RViz
 

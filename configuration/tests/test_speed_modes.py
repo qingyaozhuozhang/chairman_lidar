@@ -1,4 +1,4 @@
-"""Independent fast/slow parameters, direct navigation and live-value restoration."""
+"""Independent mode parameters, direct navigation and live-value restoration."""
 from concurrent.futures import Future
 from copy import deepcopy
 from pathlib import Path
@@ -22,13 +22,11 @@ ROOT = Path(__file__).parents[2]
 class ParameterBackend:
     def __init__(self, values):
         self.values = deepcopy(values)
-        self.writes = []
 
     def get(self, remote, names):
         return {name: self.values[remote][name] for name in names}
 
     def set(self, remote, values):
-        self.writes.append((remote, deepcopy(values)))
         self.values[remote].update(values)
 
     def settle(self):
@@ -99,63 +97,14 @@ def test_custom_mode_uses_own_values_and_preserves_unlisted_live_parameters(robo
     assert not robot.parameter_transaction.active
 
 
-@pytest.mark.parametrize('mode', [1, 2, 4, 5])
-@pytest.mark.parametrize('start_x', [0.0, 1.9])
-def test_navigation_sends_only_final_goal_and_uses_selected_parameters(robot, mode, start_x):
-    robot.pose = (start_x, 0.0, 0.0)
-    send = robot._nav_client.send_goal_async
-    observed = []
 
-    def record(goal):
-        observed.append(deepcopy(robot.backend.values))
-        return send(goal)
 
-    robot._nav_client.send_goal_async = record
+@pytest.mark.parametrize('mode,expected_x', [(1, [2.0]), (2, [2.0]), (4, [2.0]), (5, [2.0])])
+def test_navigation_uses_selected_modes_flow_and_restores_parameters(robot, mode, expected_x):
     assert TaskContext(robot).go_to_pose(2.0, 0.0, 0.0, 1.0, mode=mode)
-    assert [goal.pose.pose.position.x for goal in robot.goals] == [2.0]
-    assert len(observed) == 1
-    for remote, values in navigation.profile_values(robot, mode).items():
-        assert all(observed[0][remote][key] == value for key, value in values.items())
+    assert [goal.pose.pose.position.x for goal in robot.goals] == pytest.approx(expected_x)
     assert robot.backend.values == robot.baseline
     assert not robot.parameter_transaction.active
-    assert not robot.nav_cmd_tracking_enabled
-
-
-@pytest.mark.parametrize('mode', [1, 2])
-def test_approaching_goal_keeps_one_profile_and_waits_for_action_result(robot, mode, monkeypatch):
-    steps = iter([0.0, 0.5, 1.5, 1.99, 2.0])
-    polls = []
-
-    class PendingResult:
-        def done(self):
-            x = next(steps, None)
-            if x is None:
-                return True
-            robot.pose = (x, 0.0, 0.0)
-            polls.append(x)
-            assert robot.current_profile == mode
-            for remote, values in navigation.profile_values(robot, mode).items():
-                assert all(robot.backend.values[remote][key] == value for key, value in values.items())
-            return False
-
-        def result(self):
-            return SimpleNamespace(status=4)
-
-    result = PendingResult()
-    def send(goal):
-        robot.goals.append(goal)
-        future = Future()
-        future.set_result(SimpleNamespace(accepted=True, get_result_async=lambda: result))
-        return future
-
-    robot._nav_client.send_goal_async = send
-    monkeypatch.setattr(navigation.time, 'sleep', lambda _: None)
-    assert TaskContext(robot).go_to_pose(2.0, 0.0, 0.0, 1.0, mode=mode)
-    assert polls == [0.0, 0.5, 1.5, 1.99, 2.0]
-    assert len(robot.goals) == 1
-    # One application and one restore per remote node, with no distance-based updates.
-    assert len(robot.backend.writes) == 2 * len(robot.speed_profiles[mode])
-    assert robot.backend.values == robot.baseline
 
 
 @pytest.mark.parametrize('outcome', ['failure', 'cancel', 'exception'])

@@ -23,7 +23,7 @@ chairman_lidar/
 │   │   ├── fast_lio/                   # MID360 输入、滤波和安装外参
 │   │   ├── fishbot_navigation2/         # Nav2 启动基准与 RViz 配置
 │   │   ├── livox_ros_driver2/           # 雷达网络配置
-│   │   ├── odometry/                   # 场地初始位姿与区域边界
+│   │   ├── odometry/                   # 场地初始位姿
 │   │   ├── small_gicp_relocalization/   # 点云地图坐标变换、配准与 TF 参数
 │   │   ├── manifest.json               # 中央配置到功能包文件的映射
 │   │   └── sync.py                     # 参数同步配置文件
@@ -49,10 +49,10 @@ chairman_lidar/
 │       │   ├── on_demand/              # Python 包 chairman_tasks
 │       │   │   ├── task.py             # 请求调度、任务互斥与 TaskContext
 │       │   │   ├── config.py           # 配置加载与校验
-│       │   │   ├── fixed_point/task.py # 统一定点导航及参数应用
+│       │   │   ├── fixed_point/task.py # 统一导航流程及参数应用
 │       │   │   └── special/            # 特殊任务入口与控制实现
 │       │   └── continuous/            # 独立运行的持续功能
-│       │       ├── odometry/           # /odom_map 发布与区域检测
+│       │       ├── odometry/           # /odom_map 发布与红蓝点位显示
 │       │       └── micro_ros/
 │       │           ├── launcher/       # ROS 包 micro_ros 的构建文件
 │       │           ├── agent.py        # Agent 启动入口
@@ -133,8 +133,8 @@ source install/setup.bash
 | MID360 网络 | `src/config/livox_ros_driver2/MID360_config.json` | 雷达 IP、主机接收 IP，与实际网卡设置一致 |
 | 雷达与 IMU 配置 | `src/config/fast_lio/mid360.yaml` | 输入话题、滤波参数、安装外参 |
 | Nav2 基础配置 | `src/config/fishbot_navigation2/nav2_params.yaml` | 机器人尺寸、控制器、代价地图等参数 |
-| 建图点、场地初始位姿与区域 | `src/config/odometry/initial_poses.yaml`、`src/config/odometry/regions.yaml` | PCD 建图原点、4 个场地的启动位姿及红蓝区域边界 |
 | GICP 地图降采样 | `tool/downsample_map.py` | `GLOBAL_LEAF_SIZE` 为离线地图体素边长，默认 0.05 m；处理 `base.pcd` 生成 `final.pcd` |
+| 建图点与场地初始位姿 | `src/config/odometry/initial_poses.yaml` | PCD 建图原点与 4 个场地的启动位姿 |
 | 定点与任务模式 | `src/config/framework/on_demand/` | 红蓝点位、特殊任务、两档速度参数及特殊运动控制参数 |
 | 下位机通信 | `src/function/detail/continuous/micro_ros/config/boot.yaml` | 默认使用本项目 Agent；UDP IPv4 监听端口 8888 及可选外部工作空间 |
 | 地图和机器人模型 | `src/config/fishbot_navigation2/rviz`和`src/fishbot/fishbot_navigation/urdf` | 当前加载 `src/fishbot/fisbot_navigation/maps/room.yaml`、`src/fishbot/fishbot_navigation2/PCD/final.pcd`；核对 URDF、TF 安装偏移和扫描范围 |
@@ -169,7 +169,7 @@ ros2 run configuration main_boot
 | Micro ROS Agent | `ros2 run micro_ros agent` | UDP IPv4 通信，默认监听 8888 端口 |
 | Navigation2 | `ros2 launch fishbot_navigation2 navigation2.launch.py` | 雷达、FAST-LIO、地形分析、Nav2、RViz 等导航服务 |
 | Function sum | `ros2 run framework sum` | 功能选择与执行 |
-| Odometry | `ros2 run odometry odometry` | 地图位姿输出与区域检测 |
+| Odometry | `ros2 run odometry odometry` | 地图位姿输出与红蓝点位显示 |
 
 导航 launch 读取 odometry 包内的 `initial_poses.yaml`：`mapping_pose` 保存 PCD 建图原点在 `map` 中的位姿，转换为固定的 `map_to_pcd`；`poses` 中的 1～4 号保存底盘启动位姿，由 `SELECTED_POSE` 选择。定位节点等待本次 FAST-LIO 的局部里程计 TF，结合两组位姿计算配准初值，同时发布初始 `map → odom`。首次配准成功后，以有效匹配结果持续修正该变换。同一份 PCD 切换启动点时，`mapping_pose` 保持不变。
 
@@ -177,7 +177,7 @@ ros2 run configuration main_boot
 
 `small_gicp_relocalization_node` 是 `map → odom` 的唯一发布者，默认以 20 Hz 发布，时间戳为当前 ROS 时间加 0.1 s。Navigation2 终端中的 `[定位初始化]` 表示初始 TF 已建立；出现 `[定位就绪] GICP 配准成功` 才表示首次匹配成功，确认 RViz 中的位置和朝向正确后再执行导航。odometry 默认不自动发布 `/initialpose`；RViz 的 `2D Pose Estimate` 可手动重新初始化 GICP。
 
-导航服务统一调用 `src/fishbot/fishbot_navigation2/launch/navigation2.launch.py`。`sum` 只使用已选场地对应的红/蓝点位和区域，不弹出第二次场地选择。
+导航服务统一调用 `src/fishbot/fishbot_navigation2/launch/navigation2.launch.py`。`sum` 只使用已选场地对应的红/蓝点位，不弹出第二次场地选择。
 
 `main_boot` 的全部参数：
 
@@ -242,15 +242,15 @@ ros2 run framework sum
 没有自定义命令行参数，不接受 `--selected-pose`、`--call` 等选项。场地来自启动环境 `SELECTED_POSE`；未设置时独立运行缺省为场地 1。`main_boot` 只能把环境传给它启动的子进程，不能改变另一个已经打开的终端。若跳过自动 `sum` 后在另一个终端调试，应显式沿用同一场地，例如 `SELECTED_POSE=4 ros2 run framework sum`。
 
 
-功能运行过程：两档速度模式统一输出任务开始与最终完成、失败或中止结果；运行过程在同一行更新阶段、误差和耗时，最多每秒刷新 5 次。状态条表示任务仍在执行，不表示完成百分比。阶段切换更新状态条，整次任务结束并完成收尾后自动重新显示完整菜单；重定向到文件时不输出状态条。
+功能运行过程：两档速度参数统一输出任务开始与最终完成、失败或中止结果；运行过程在同一行更新阶段、误差和耗时，最多每秒刷新 5 次。状态条表示任务仍在执行，不表示完成百分比。阶段切换更新状态条，整次任务结束并完成收尾后自动重新显示完整菜单；重定向到文件时不输出状态条。
 
 | 模式 | 配置文件 | 执行过程 |
 |---|---|---|
 | 1 | `speed_1.yaml` | 快速档，直接导航至最终目标 |
 | 2 | `speed_2.yaml` | 慢速档，直接导航至最终目标 |
-| — | `special.yaml` | 特殊运动控制参数，不作为定点速度模式 |
+| — | `special.yaml` | 特殊运动参数，不作为速度模式编号 |
 
-模式配置位于 `src/config/framework/on_demand/modes/`，使用与 `nav2_params.yaml` 一致的节点名称及 `ros__parameters` 层级。两档共用同一套直接导航流程，每个文件独立定义本档参数，点位的 `mode` 对应文件中的 `id`。一次导航只发送最终目标，全程使用所选参数组；任务期间通过参数服务临时赋值，结束后恢复运行前的值。磁盘 `nav2_params.yaml` 保留启动基准。
+模式配置位于 `src/config/framework/on_demand/modes/`，使用与 `nav2_params.yaml` 一致的节点名称及 `ros__parameters` 层级。每个模式独立定义参数，点位的 `mode` 对应文件中的 `id`；两档共用直接导航流程。任务期间通过参数服务临时赋值，结束后恢复运行前的值；磁盘 `nav2_params.yaml` 保留启动基准。
 
 完整菜单示例、任务接口及添加功能步骤见 [功能开发说明](docs/function_development.md)。
 
@@ -263,7 +263,6 @@ ros2 run framework sum
 ros2 run chairman_config sync --all
 # 指定一个或多个文件覆盖
 ros2 run chairman_config sync --files fast_lio/mid360.yaml
-ros2 run chairman_config sync --files fishbot_navigation2/nav2_params.yaml odometry/regions.yaml
 # 帮助
 ros2 run chairman_config sync --help
 ```
@@ -300,14 +299,13 @@ ros2 run tool get_pose
 ros2 run tool point
 ```
 
-先启动导航和 `odometry`，等待 GICP 匹配成功并核对 RViz 地图位姿。在菜单中选择区域、固定点或启动点，将机器人停稳后按回车，即采集并保存当前位姿。区域/固定点需选择红蓝半场和编号；启动点先选菜单 `3`，再选启动编号 1～4，并将车头调整到实际启动朝向。可连续选择下一点，无需重启工具。
+先启动导航和 `odometry`，等待 GICP 匹配成功并核对 RViz 地图位姿。在菜单中选择固定点或启动点，将机器人停稳后按回车，即采集并保存当前位姿。固定点需选择红蓝半场和编号；固定点选菜单 `1`；启动点先选菜单 `2`，再选启动编号 1～4，并将车头调整到实际启动朝向。可连续选择下一点，无需重启工具。
 
-工具直接订阅 `/odom_map`（`custom_msg/msg/PoseEuler`），不读取 `/rosout` 日志，也不把 FAST-LIO 原始 `/Odometry` 坐标直接写成地图点位。每次取确认后收到的 **10 条有效消息**，x/y/z 分别去掉一个最大值和一个最小值，用剩余 8 个求平均；yaw 先处理 ±π 环绕再去极值。固定点和区域只使用平均 x/y，启动点还将平均 yaw 转成 qz/qw 写入配置。采集速度取决于实际话题频率（例如 10 Hz 约 1 秒），不会等待日志节流周期。默认 5 秒超时，消息不足时不写入。
+工具直接订阅 `/odom_map`（`custom_msg/msg/PoseEuler`），不读取 `/rosout` 日志，也不把 FAST-LIO 原始 `/Odometry` 坐标直接写成地图点位。每次取确认后收到的 **10 条有效消息**，x/y/z 分别去掉一个最大值和一个最小值，用剩余 8 个求平均；yaw 先处理 ±π 环绕再去极值。固定点只使用平均 x/y，启动点还将平均 yaw 转成 qz/qw 写入配置。采集速度取决于实际话题频率（例如 10 Hz 约 1 秒），不会等待日志节流周期。默认 5 秒超时，消息不足时不写入。
 
 | 模式 | 写入位置 | 修改内容与生效方式 |
 |---|---|---|
-| 固定点 | `src/config/framework/on_demand/points.yaml` 与 `src/function/config/on_demand/points.yaml` | 两份文件中同一半场、同一编号的 x/y 同时更新，保留各自的 qz/qw、名称与模式；15/16 为动态目标。|
-| 区域中心 | `src/config/odometry/regions.yaml` 与 `src/function/detail/continuous/odometry/config/regions.yaml` | 两份文件中同一半场、同一编号的正方形边界同时更新为中心±0.6 m。|
+| 固定点 | `src/config/framework/on_demand/points.yaml` 与 `src/function/config/on_demand/points.yaml` | 两份文件中同一半场、同一编号的 x/y 同时更新，保留各自的 qz/qw、名称与模式；16 为动态目标。|
 | 启动点 | `src/config/odometry/initial_poses.yaml` 与 `src/function/detail/continuous/odometry/config/initial_poses.yaml` | 同时更新所选编号的 `lidar_init_x/y/qz/qw`，保留其他启动点和注释。构建 `odometry` 后，重启 Navigation2 与 odometry。|
 
 标定只写两份源码配置，不写 `install`，不创建备份目录。启动点采集依赖正确的地图定位：可从已能正确定位的位置启动，再移动到待记录的启动点。尚未配准成功时，显示的初始估计不能用于验证或重新标定自身。
@@ -315,6 +313,18 @@ ros2 run tool point
 工具根据自身路径定位工程，也可用 `--workspace /项目根目录` 指定；`--timeout 10` 调整超时，`--topic /odom_map` 指定同类型的 map 位姿话题。`POINT_WORKSPACE` 环境变量也可指定工程。
 
 修改工具代码后执行 `colcon build --packages-select tool`、`source install/setup.bash`。也可在已加载 ROS 环境的终端直接运行 `python3 tool/point.py`。
+
+### 红蓝点位显示
+
+`ros2 run odometry odometry` 同时启动位姿输出与 `points_visualizer`。RViz 默认启用 `Navigation Points`，订阅 `/navigation_points`：红方点为红色 `R编号`，蓝方点为蓝色 `B编号`，两方同时显示在 `map` 坐标系中。空坐标的动态目标不显示。
+
+实现位于 `src/function/detail/continuous/odometry/src/points_visualizer.cpp`。源码工作空间读取 `src/function/config/on_demand/points.yaml`，每秒检查一次内容变化，point 保存后自动刷新；仅部署安装目录时读取同一安装树中的 framework 配置。文件暂时无效时保留上次有效标记，删除点位后清除旧标记。显示更新不等同于导航目标更新，Function sum 仍需按配置流程重新加载。
+
+单独调试显示节点：
+
+```bash
+ros2 run odometry points_visualizer --ros-args -p points_file:="$(pwd)/src/function/config/on_demand/points.yaml"
+```
 
 ### 地图降采样
 
@@ -350,3 +360,6 @@ GICP 直接使用离线地图，不再对地图降采样。FAST-LIO 保持原有
 | 新基础配置文件 | 在 `src/config/` 增加中央副本，并在 `manifest.json` 登记实际目标路径；目标包也须安装和加载该文件 |
 
 新增 YAML 或 Python 模块后重新构建对应包，再重启相关进程。步骤和可复制模板分别见 [配置说明](docs/parameter_modification.md) 与 [功能开发说明](docs/function_development.md)。
+
+
+

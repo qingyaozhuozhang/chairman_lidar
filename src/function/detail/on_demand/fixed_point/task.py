@@ -179,7 +179,7 @@ def result_description(status):
 
 
 def profile_key(node, speed_profile):
-    """模式编号仅用于选择参数表，所有编号执行相同的导航流程。"""
+    """模式编号仅选择参数表，所有模式执行相同的导航流程。"""
     if speed_profile is None:
         return 1
     if isinstance(speed_profile, str):

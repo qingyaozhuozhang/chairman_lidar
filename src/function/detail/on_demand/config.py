@@ -62,7 +62,8 @@ def load_modes(root=None):
             raise ValueError(f'{path.name}: name必须为非空字符串')
         unknown = set(mode) - {'id', 'name', 'parameters'}
         if unknown:
-            raise ValueError(f'{path.name}: 仅支持 id、name、parameters，未知字段: {sorted(unknown)}')
+            raise ValueError(f'{path.name}: 不支持的模式字段 {sorted(unknown)}')
+        flatten_parameters(mode.get('parameters', {}))
         if not dynamic_parameters(mode.get('parameters', {})):
             raise ValueError(f'{path.name}: 缺少 parameters 原生参数表')
         result[key] = mode
@@ -288,9 +289,4 @@ def load_configuration(node):
     node.current_profile = None
     for name, value in load_special_parameters(node=node).items():
         setattr(node, name, value)
-    from ament_index_python.packages import get_package_share_directory
-    regions = read_yaml(Path(get_package_share_directory('odometry')) / 'config/regions.yaml')
-    key = 'regions_red' if selected in (1,2) else 'regions_blue'
-    node.merlin_regions = {r['id']: [r['x_min'], r['x_max'], r['y_min'], r['y_max'], r['name']]
-                           for r in regions[key] if 1 <= r['id'] <= 13}
     node.get_logger().info(f'场地编号: {selected}；功能服务 /set_nav_target 已就绪')

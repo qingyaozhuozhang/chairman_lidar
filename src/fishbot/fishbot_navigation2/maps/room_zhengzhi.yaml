@@ -1,0 +1,9 @@
+image: room_zhengzhi.pgm
+resolution: 0.05
+origin:
+  - -1.6498267650604248
+  - -0.5499611496925354
+  - 0
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.196

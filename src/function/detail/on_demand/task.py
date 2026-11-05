@@ -164,10 +164,6 @@ class TaskContext:
             return navigation.navigate(self.node, x, y, qz, qw, name, speed_profile=selected)
         return self.navigation(mode, navigate)
 
-    def align_region(self, mode=1):
-        from chairman_tasks.special.align_region.task import navigate
-        return self.navigation(mode, lambda selected: navigate(self.node, speed_profile=selected))
-
     def navigate_offset(self, offset, mode=1):
         from chairman_tasks.special.kfs_navigation.task import navigate
         return self.navigation(mode, lambda selected: navigate(self.node, offset, speed_profile=selected))

@@ -61,9 +61,21 @@ def generate_launch_description():
             DeclareLaunchArgument("use_sim_time", default_value="false"),
             DeclareLaunchArgument(
                 "prior_pcd_file",
-                default_value="",
+                default_value="src/fishbot/fishbot_navigation2/PCD/final.pcd",
                 description="已有 PCD 地图的路径；总导航启动时自动传入",
             ),
+            # ========== 新增：声明过滤参数 ==========
+            DeclareLaunchArgument(
+                "map_consistency_dist",
+                default_value="0.30",
+                description="地图一致性过滤的最近邻距离阈值，0 表示关闭",
+            ),
+            DeclareLaunchArgument(
+                "map_consistency_min_ratio",
+                default_value="0.20",
+                description="首次配准前允许的最低保留比例，低于该值本帧回退",
+            ),
+            # =======================================
             LogInfo(msg=f"[GICP 启动] 选择启动点 {selected}；建图点与启动点文件：{pose_file}"),
             Node(
                 package="small_gicp_relocalization",
@@ -80,6 +92,14 @@ def generate_launch_description():
                         "use_sim_time": ParameterValue(
                             LaunchConfiguration("use_sim_time"), value_type=bool
                         ),
+                        # ========== 新增：注入过滤参数 ==========
+                        "map_consistency_dist": ParameterValue(
+                            LaunchConfiguration("map_consistency_dist"), value_type=float
+                        ),
+                        "map_consistency_min_ratio": ParameterValue(
+                            LaunchConfiguration("map_consistency_min_ratio"), value_type=float
+                        ),
+                        # =======================================
                     },
                 ],
             ),

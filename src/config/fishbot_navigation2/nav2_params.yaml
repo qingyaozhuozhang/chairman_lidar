@@ -218,7 +218,7 @@ local_costmap:
         observation_sources: terrain_map
         terrain_map:
           data_type: PointCloud2
-          topic: /terrain_map
+          topic: /terrain_map2
           sensor_frame: odom
           min_obstacle_height: 0.0
           max_obstacle_height: 2.0
@@ -260,7 +260,7 @@ global_costmap:
         observation_sources: terrain_map_ext
         terrain_map_ext:
           data_type: PointCloud2
-          topic: /terrain_map_ext
+          topic: /terrain_map_ext2
           sensor_frame: odom
           min_obstacle_height: 0.0
           max_obstacle_height: 5.0

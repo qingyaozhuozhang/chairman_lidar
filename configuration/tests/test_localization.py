@@ -153,6 +153,8 @@ def test_odometry_does_not_overwrite_localizer_startup_pose(localization_launch,
     monkeypatch.setattr(module, 'Node', shared.Node)
     monkeypatch.setenv('SELECTED_POSE', '4')
     module.generate_launch_description()
-    parameters = calls[0]['parameters'][0]
-    assert parameters['selected_pose'] == 4
+    parameters = next(n for n in calls if n['executable'] == 'odometry_transform_math')['parameters'][0]
+    assert parameters['lidar_init_x'] == 6.0
+    assert parameters['lidar_init_y'] == 4.0
+    assert 'selected_pose' not in parameters
     assert parameters['initialpose_publish_after_stable_count'] == 0

@@ -20,7 +20,7 @@
   <depend>tf2_sensor_msgs</depend>
   
   <depend>yaml-cpp</depend>
-  <depend>ament_index_cpp</depend>
+  <depend>visualization_msgs</depend>
   <exec_depend>rclpy</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>ament_index_python</exec_depend>

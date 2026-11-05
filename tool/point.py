@@ -5,8 +5,6 @@
 ros2 run tool point
   定点：同时更新 src/config/framework/on_demand/points.yaml
         和 src/function/config/on_demand/points.yaml，只修改 x/y。
-  区域：同时更新 src/config/odometry/regions.yaml
-        和 src/function/detail/continuous/odometry/config/regions.yaml，中心 ±0.6 m。
   启动点：同时更新 src/config/odometry/initial_poses.yaml
           和 src/function/detail/continuous/odometry/config/initial_poses.yaml，修改 x/y/qz/qw。
 """
@@ -25,11 +23,8 @@ import yaml
 from yaml.nodes import MappingNode, ScalarNode, SequenceNode
 
 SAMPLE_COUNT = 10
-REGION_HALF_SIZE = 0.6
 POINTS_PATH = Path('src/config/framework/on_demand/points.yaml')
-REGIONS_PATH = Path('src/config/odometry/regions.yaml')
 POINTS_COPY = Path('src/function/config/on_demand/points.yaml')
-REGIONS_COPY = Path('src/function/detail/continuous/odometry/config/regions.yaml')
 INITIAL_POSES_PATH = Path('src/config/odometry/initial_poses.yaml')
 INITIAL_POSES_COPY = Path('src/function/detail/continuous/odometry/config/initial_poses.yaml')
 START_NAMES = {1: '红武馆', 2: '红对抗', 3: '蓝武馆', 4: '蓝对抗'}
@@ -137,19 +132,19 @@ def find_workspace(explicit=None):
     explicit = explicit or os.environ.get('POINT_WORKSPACE')
     if explicit:
         root = Path(explicit).expanduser().resolve()
-        if (root / POINTS_PATH).is_file() and (root / REGIONS_PATH).is_file():
+        if (root / POINTS_PATH).is_file():
             return root
-        raise FileNotFoundError(f'工作空间缺少 points.yaml 或中央 regions.yaml：{root}')
+        raise FileNotFoundError(f'工作空间缺少 中央 points.yaml：{root}')
     for start in (Path(__file__).resolve().parent, Path.cwd().resolve()):
         for root in (start, *start.parents):
-            if (root / POINTS_PATH).is_file() and (root / REGIONS_PATH).is_file():
+            if (root / POINTS_PATH).is_file():
                 return root
     raise FileNotFoundError('找不到 chairman_lidar 源码工程；请用 --workspace 指定项目根目录')
 
 
 def resolve_project_files(workspace=None):
     root = find_workspace(workspace)
-    return root / POINTS_PATH, root / REGIONS_PATH
+    return root / POINTS_PATH, root / INITIAL_POSES_PATH
 
 
 def calibration_paths(workspace, kind):
@@ -157,7 +152,6 @@ def calibration_paths(workspace, kind):
     root = find_workspace(workspace)
     relative_paths = {
         'point': (POINTS_PATH, POINTS_COPY),
-        'region': (REGIONS_PATH, REGIONS_COPY),
         'initial_pose': (INITIAL_POSES_PATH, INITIAL_POSES_COPY),
     }[kind]
     paths = []
@@ -216,24 +210,6 @@ def point_items(path, side):
         if (type(point_id) is not int or not isinstance(item, dict)
                 or not isinstance(item.get('pose'), list) or len(item['pose']) != 4):
             raise ValueError(f'{side}/{point_id}：点位格式应包含 pose: [x,y,qz,qw]')
-    return items
-
-
-def region_items(path, side):
-    _, data, _ = read_document(path)
-    entries = data.get('regions_' + side)
-    if not isinstance(entries, list):
-        raise ValueError(f'regions.yaml 中找不到 regions_{side} 列表')
-    items = {}
-    for item in entries:
-        if not isinstance(item, dict) or type(item.get('id')) is not int:
-            raise ValueError('区域条目必须包含整数 id')
-        if item['id'] in items:
-            raise ValueError(f'区域 id 重复：{item["id"]}')
-        for key in ('x_min', 'x_max', 'y_min', 'y_max'):
-            if type(item.get(key)) not in (float, int) or not math.isfinite(item[key]):
-                raise ValueError(f'区域 {item["id"]} 的 {key} 必须为有限数值')
-        items[item['id']] = item
     return items
 
 
@@ -333,24 +309,6 @@ def prepare_point_xy(path, side, point_id, x, y):
     return prepare_scalar_updates(text, [(node.value[0], x), (node.value[1], y)], expected)
 
 
-def prepare_region_center(path, side, region_id, x, y):
-    region_items(path, side)
-    text, data, tree = read_document(path)
-    key = 'regions_' + side
-    index = next((i for i, item in enumerate(data[key]) if item['id'] == region_id), None)
-    if index is None:
-        raise ValueError(f'{key} 中找不到区域 {region_id}')
-    group = mapping_value(tree, key)
-    if not isinstance(group, SequenceNode):
-        raise ValueError('区域配置必须为列表')
-    values = dict(x_min=x - REGION_HALF_SIZE, x_max=x + REGION_HALF_SIZE,
-                  y_min=y - REGION_HALF_SIZE, y_max=y + REGION_HALF_SIZE)
-    expected = deepcopy(data)
-    expected[key][index].update({k: round(v, 3) for k, v in values.items()})
-    return prepare_scalar_updates(
-        text, [(mapping_value(group.value[index], k), v) for k, v in values.items()], expected)
-
-
 def prepare_initial_pose(path, number, pose):
     items = initial_pose_items(path)
     if number not in items:
@@ -369,10 +327,6 @@ def prepare_initial_pose(path, number, pose):
 
 def update_point_xy(path, side, point_id, x, y):
     return path in commit_updates({path: prepare_point_xy(path, side, point_id, x, y)})
-
-
-def update_region_center(path, side, region_id, x, y):
-    return path in commit_updates({path: prepare_region_center(path, side, region_id, x, y)})
 
 
 def ask(prompt):
@@ -396,25 +350,22 @@ def choose_side():
         print('输入无效。')
 
 
-def show_items(items, is_region):
-    print('\n ID    X/中心X    Y/中心Y    名称')
+def show_items(items):
+    print('\n ID         X          Y    名称')
     for key, item in sorted(items.items()):
-        if is_region:
-            x, y = (item['x_min'] + item['x_max']) / 2, (item['y_min'] + item['y_max']) / 2
-        else:
-            x, y = item['pose'][:2]
+        x, y = item['pose'][:2]
         xy = '动态目标（不可标定）' if x is None or y is None else f'{x:10.3f} {y:10.3f}'
         print(f'{key:3} {xy}  {item.get("name", key)}')
 
 
-def run_mode(collector, path, is_region, timeout, workspace=None):
+def run_mode(collector, path, timeout, workspace=None):
     while True:
         side = choose_side()
         if side is None:
             return
         while True:
-            items = region_items(path, side) if is_region else point_items(path, side)
-            show_items(items, is_region)
+            items = point_items(path, side)
+            show_items(items)
             value = ask('选择编号（b 返回半场选择，q 退出）：')
             if value in ('q', 'quit', 'exit'):
                 raise KeyboardInterrupt
@@ -424,7 +375,7 @@ def run_mode(collector, path, is_region, timeout, workspace=None):
                 selected = int(value)
                 if selected not in items:
                     raise ValueError('编号不存在')
-                if not is_region and any(v is None for v in items[selected]['pose']):
+                if any(v is None for v in items[selected]['pose']):
                     raise ValueError('动态目标不可标定，请选择固定点')
             except ValueError as exc:
                 print(f'无法选择：{exc}')
@@ -439,12 +390,12 @@ def run_mode(collector, path, is_region, timeout, workspace=None):
                 print('未开始采集，请重新选择。')
                 continue
             try:
-                paths = calibration_paths(workspace, 'region' if is_region else 'point')
+                paths = calibration_paths(workspace, 'point')
                 print('正在接收 10 条新位姿……', flush=True)
                 avg = collector.collect_next_average(timeout)
                 print(f'采集用时 {collector.elapsed:.2f}s；逐项去掉最大/最小值，剩余 8 条平均：'
                       f'X={avg.x:.3f}, Y={avg.y:.3f}, Z={avg.z:.3f}, Yaw={avg.yaw:.3f}')
-                prepare = prepare_region_center if is_region else prepare_point_xy
+                prepare = prepare_point_xy
                 updates = {}
                 for target in paths:
                     try:
@@ -457,12 +408,8 @@ def run_mode(collector, path, is_region, timeout, workspace=None):
                         print(f'已保存并校验：{target}')
                     else:
                         print(f'坐标未变化：{target}')
-                if is_region:
-                    print('两份源码区域配置已更新为中心±0.6m。构建 odometry 后，'
-                          '重启 odometry 与 framework 功能进程加载新配置。')
-                else:
-                    print('两份源码点位已更新，保留各自的朝向、名称和模式。'
-                          '构建 framework 后，重启功能进程加载新配置。')
+                print('两份源码点位已更新，保留各自的朝向、名称和模式。'
+                      '地图标记自动刷新；构建 framework 后，重启功能进程加载导航目标。')
             except (OSError, ValueError, RuntimeError, yaml.YAMLError) as exc:
                 print(f'本次标定未完成：{exc}')
 
@@ -531,13 +478,12 @@ def main(args=None):
         parser.error('--timeout 必须是正有限数值')
     try:
         workspace = find_workspace(options.workspace)
-        points, regions = resolve_project_files(workspace)
+        points, initial_poses = resolve_project_files(workspace)
     except (OSError, ValueError) as exc:
         parser.error(str(exc))
     print('================ chairman_lidar 点位标定 ================')
     print(f'采集：{options.topic}（map 位姿）；每批 10 条，去掉最大/最小值后平均。')
-    initial_poses = workspace / INITIAL_POSES_PATH
-    print(f'定点文件：{points}\n区域文件：{regions}\n启动点文件：{initial_poses}')
+    print(f'定点文件：{points}\n启动点文件：{initial_poses}')
     print('保存时同时更新 src/function 中的对应源码配置，不修改 install。')
     print('请先启动导航与 odometry，等待定位就绪。每次采集前将机器人停稳。')
     rclpy.init(args=argv[1:], signal_handler_options=SignalHandlerOptions.NO)
@@ -553,17 +499,14 @@ def main(args=None):
         worker = threading.Thread(target=executor.spin, name='point_pose_receiver', daemon=True)
         worker.start()
         while rclpy.ok():
-            print('\n1：区域中心标定（中心±0.6m）  2：固定点标定（仅 x/y）'
-                  '  3：启动点标定（x/y/朝向）  q：退出')
+            print('\n1：固定点标定（仅 x/y）  2：启动点标定（x/y/朝向）  q：退出')
             choice = ask('选择模式：')
             if choice == 'q':
                 break
             try:
                 if choice == '1':
-                    run_mode(collector, regions, True, options.timeout, workspace)
+                    run_mode(collector, points, options.timeout, workspace)
                 elif choice == '2':
-                    run_mode(collector, points, False, options.timeout, workspace)
-                elif choice == '3':
                     run_initial_pose_mode(collector, initial_poses, options.timeout, workspace)
                 else:
                     print('输入无效。')

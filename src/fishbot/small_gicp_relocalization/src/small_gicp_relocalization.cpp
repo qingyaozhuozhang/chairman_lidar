@@ -16,7 +16,7 @@
 
 #include <chrono>
 #include <fstream>
-
+#include "small_gicp_relocalization/cropped_cloud.hpp"
 #include "pcl/common/transforms.h"
 #include "pcl_conversions/pcl_conversions.h"
 #include "rclcpp/create_timer.hpp"
@@ -24,6 +24,8 @@
 #include "small_gicp_relocalization/map_preprocessing.hpp"
 #include "small_gicp_relocalization/pose_transform.hpp"
 #include "tf2_eigen/tf2_eigen.hpp"
+
+#include "small_gicp_relocalization/map_consistency.hpp"
 
 namespace small_gicp_relocalization
 {
@@ -33,12 +35,17 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
 {
   num_threads_ = declare_parameter("num_threads", 16);
   num_neighbors_ = declare_parameter("num_neighbors", 10);
-  max_dist_sq_ = declare_parameter("max_dist_sq", 4.0);
+  max_dist_sq_ = declare_parameter("max_dist_sq", 16.0);
   map_frame_ = declare_parameter<std::string>("map_frame", "map");
   odom_frame_ = declare_parameter<std::string>("odom_frame", "odom");
   robot_base_frame_ = declare_parameter<std::string>("robot_base_frame", "base_footprint");
   prior_pcd_file_ = declare_parameter<std::string>("prior_pcd_file", "");
   input_cloud_topic_ = declare_parameter<std::string>("input_cloud_topic", "/cloud_registered");
+  enable_cropped_ = declare_parameter("enable_cropped", true);
+  crop_x_min_ = declare_parameter("crop_x_min", -2.70);
+  crop_x_max_ = declare_parameter("crop_x_max", 3.50);
+  crop_y_min_ = declare_parameter("crop_y_min", -27.5);
+  crop_y_max_ = declare_parameter("crop_y_max", 62);
   initial_map_pose_ = poseFromXyzRpy(
     declare_parameter<std::vector<double>>("initial_map_pose", std::vector<double>{}));
   map_to_pcd_ =
@@ -46,6 +53,8 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   const double publish_rate = declare_parameter("publish_rate_hz", 20.0);
   const double registration_rate = declare_parameter("registration_rate_hz", 2.0);
   time_offset_ = declare_parameter("time_offset_sec", 0.1);
+  map_consistency_dist_ = declare_parameter("map_consistency_dist", 0.20);
+  map_consistency_min_ratio_ = declare_parameter("map_consistency_min_ratio", 0.20);
   if (
     map_frame_.empty() || odom_frame_.empty() || robot_base_frame_.empty() ||
     map_frame_ == odom_frame_ || map_frame_ == robot_base_frame_ ||
@@ -54,16 +63,19 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   }
   if (
     num_threads_ < 1 || num_neighbors_ < 3 || !std::isfinite(max_dist_sq_) || max_dist_sq_ <= 0.0 ||
+    !std::isfinite(map_consistency_dist_) || map_consistency_dist_ < 0.0 ||
+    !std::isfinite(map_consistency_min_ratio_) || map_consistency_min_ratio_ <= 0.0 || map_consistency_min_ratio_ > 1.0 ||
     !std::isfinite(publish_rate) || publish_rate <= 0.0 || publish_rate > 1000.0 ||
     !std::isfinite(registration_rate) || registration_rate <= 0.0 || registration_rate > 100.0 ||
     !std::isfinite(time_offset_) || time_offset_ < 0.0) {
-    throw std::invalid_argument("invalid GICP sampling, matching or timer parameters");
+    throw std::invalid_argument("invalid GICP sampling, matching, filtering or timer parameters");
   }
 
   tf_buffer_ = std::make_unique<tf2_ros::Buffer>(get_clock());
   tf_listener_ = std::make_unique<tf2_ros::TransformListener>(*tf_buffer_);
   tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(this);
   accumulated_cloud_ = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+  accumulated_cloud_cropped_ = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
   global_map_ = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
   register_ = std::make_shared<
     small_gicp::Registration<small_gicp::GICPFactor, small_gicp::ParallelReductionOMP>>();
@@ -108,6 +120,10 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   pcd_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
     input_cloud_topic_, rclcpp::SensorDataQoS(),
     std::bind(&SmallGicpRelocalizationNode::registeredPcdCallback, this, std::placeholders::_1));
+  cropped_cloud_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
+    "/cropped_source_cloud", rclcpp::QoS(10).reliable());
+  filtered_cloud_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(
+    "/map_consistency_filtered_cloud", rclcpp::QoS(10).reliable());
   // 只接收当前发布的人工初始位姿，避免重启时重放历史定位指令。
   initial_pose_sub_ = create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
     "/initialpose", rclcpp::QoS(10).reliable().durability_volatile(),
@@ -256,15 +272,66 @@ void SmallGicpRelocalizationNode::registeredPcdCallback(
 void SmallGicpRelocalizationNode::performRegistration()
 {
   Eigen::Isometry3d seed;
+  bool was_matched = false;
   {
     std::lock_guard<std::mutex> guard(transform_mutex_);
     if (!initialized_ || accumulated_cloud_->empty()) {
       return;
     }
     seed = result_t_;
+    was_matched = matched_;
   }
   const auto registration_begin = std::chrono::steady_clock::now();
-  source_ = downsampleLivePoints(*accumulated_cloud_, map_leaf_size_);
+  if(enable_cropped_){
+    accumulated_cloud_cropped_ = cropByXY(accumulated_cloud_, crop_x_min_, crop_x_max_, crop_y_min_, crop_y_max_);
+    sensor_msgs::msg::PointCloud2 cloud_msg;
+    pcl::toROSMsg(*accumulated_cloud_cropped_, cloud_msg);
+    cloud_msg.header.frame_id = "camera_init";   
+    cloud_msg.header.stamp = this->now();
+    cropped_cloud_pub_->publish(cloud_msg);
+  }
+  else{
+    *accumulated_cloud_cropped_ = *accumulated_cloud_;
+  }
+  source_ = downsampleLivePoints(*accumulated_cloud_cropped_, map_leaf_size_);
+
+    // ========== 新增：地图一致性过滤 ==========
+  if (map_consistency_dist_ > 0.0 && !source_->empty()) {
+    const size_t before = source_->size();
+    auto filtered = filterByMapConsistency(
+      *source_, *target_tree_, seed, map_consistency_dist_);
+    const size_t after = filtered->size();
+    const double keep_ratio =
+      static_cast<double>(after) / static_cast<double>(before);
+
+    pcl::PointCloud<pcl::PointXYZ>::Ptr filtered_xyz(new pcl::PointCloud<pcl::PointXYZ>);
+    filtered_xyz->reserve(filtered->size());
+    for (const auto & p : filtered->points) {
+      filtered_xyz->push_back(pcl::PointXYZ(p.x, p.y, p.z));
+    }
+    sensor_msgs::msg::PointCloud2 msg;
+    pcl::toROSMsg(*filtered_xyz, msg);
+    msg.header.frame_id = "camera_init";   // filtered 是源点云，在 odom 系
+    msg.header.stamp = now();
+    filtered_cloud_pub_->publish(msg);   // 需在构造函数里创建这个 publisher
+
+    // 兜底机制：如果首次匹配前，发现保留点太少，说明 seed 可能偏了，不执行过滤
+    if (!was_matched && keep_ratio < map_consistency_min_ratio_) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 3000,
+        "地图一致性过滤仅保留 %.1f%%，低于 %.1f%%，本帧回退为原始点云；"
+        "请检查初始位姿或地图覆盖",
+        100.0 * keep_ratio, 100.0 * map_consistency_min_ratio_);
+    } else {
+      source_ = std::move(filtered);
+      RCLCPP_INFO_THROTTLE(
+        get_logger(), *get_clock(), 3000,
+        "地图一致性过滤：%zu -> %zu 点（保留 %.1f%%，阈值 %.3fm）",
+        before, after, 100.0 * keep_ratio, map_consistency_dist_);
+    }
+  }
+  // ==========================================
+
   accumulated_cloud_->clear();
   if (source_->size() < static_cast<size_t>(num_neighbors_)) {
     return;

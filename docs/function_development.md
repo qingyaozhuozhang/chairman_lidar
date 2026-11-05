@@ -22,7 +22,6 @@ src/function/
 │   │       ├── move_forward/task.py      # 沿自身坐标系往前直走控制
 │   │       ├── turn_left/task.py         # 原地左转控制
 │   │       ├── stair_forward/task.py     # 登阶周期控制与停止信号处理
-│   │       ├── align_region/task.py      # 当前区域中心目标计算
 │   │       ├── uphill/task.py            # 沿地图 X 方向上坡
 │   │       └── <功能名>/task.py          # 功能入口 run(ctx, request)
 │   └── continuous/                       # 独立运行的持续功能
@@ -66,7 +65,7 @@ source install/setup.bash
 ros2 run configuration main_boot
 ```
 
-总启动选择场地后，将 `SELECTED_POSE` 传给功能、导航及 odometry 进程：1/2 使用红方点位与区域，3/4 使用蓝方。Function sum 不再单独选择场地。
+总启动选择场地后，将 `SELECTED_POSE` 传给功能、导航及 odometry 进程：1/2 使用红方点位，3/4 使用蓝方。Function sum 不再单独选择场地。
 
 需要在另一个终端独立运行菜单时，先避免总启动重复创建功能进程，再沿用同一场地编号：
 
@@ -117,7 +116,6 @@ chairman_lidar 功能菜单
    -9: KFS偏置闭环移动
   -10: 左移0.1m/s等待停止信号
   -11: 等待抬升高度变化
-   15: 对准当前梅林区域中心
    16: KFS偏置导航
 输入功能编号；执行时 Ctrl+C 中止当前任务；输入 m 重看菜单；菜单中 q 或 Ctrl+C 退出。
 选择功能编号>
@@ -127,10 +125,10 @@ chairman_lidar 功能菜单
 
 | 模式 | 状态条中的阶段 |
 |---|---|
-| 1 | 模式1 直接导航，使用快速档参数 |
-| 2 | 模式2 直接导航，使用慢速档参数 |
+| 1 | 模式1 直接导航，快速档参数 |
+| 2 | 模式2 直接导航，慢速档参数 |
 
-模式 1 的显示示意如下；两行状态条代表同一行在不同时刻的内容：
+任务显示示意如下；两行状态条代表同一行在不同时刻的内容：
 
 ```text
 [任务开始] 编号 1：矛头1（模式 1）
@@ -150,7 +148,7 @@ chairman_lidar 功能菜单
 
 成功、中止或失败均先尝试停止动作和恢复参数，再报告 `[任务完成]`、`[任务中止]` 或 `[任务失败]`。结果中的“结束位置”指执行阶段。若停止或恢复尚未确认，结果会说明原因，后续任务在恢复完成前不能继续执行。
 
-两档使用相同的目标发送和结果等待流程，距离与朝向误差仅用于状态显示。目标是否到达以 Nav2 的动作结果为准，任务收尾完成后再进入下一步。
+两档均只发送最终目标，并等待 Nav2 的动作结果。当前位置和目标的距离只用于显示，不作为任务成功的判据。
 
 选择 -9 或 16 后继续输入：
 
@@ -181,7 +179,7 @@ red:
   34:
     name: 中场等待点
     pose: [1.20, 2.30, 0.0, 1.0]
-    mode: 1
+    mode: 3
 ```
 
 2. 蓝方也需要此点时，在已有 `blue:` 下填写同编号及蓝方坐标。只登记一方的点，仅在对应方菜单显示。
@@ -191,13 +189,13 @@ red:
 ros2 run chairman_config sync --files framework/on_demand/points.yaml
 ```
 
-`pose` 是地图坐标系中的 `[x, y, qz, qw]`，位置单位 m，朝向为平面四元数；`mode` 必须引用已定义模式。编号范围为 0～127，15/16 已用于动态目标。普通点无需新增 Python 文件或登记 `functions.yaml`，由定点导航入口统一处理。
+`pose` 是地图坐标系中的 `[x, y, qz, qw]`，位置单位 m，朝向为平面四元数；`mode` 必须引用已定义模式。编号范围为 0～127，16 已用于动态目标。普通点无需新增 Python 文件或登记 `functions.yaml`，由定点导航入口统一处理。
 
 实车采集点位使用 `ros2 run tool point`，具体采样和保存规则见 [README 的工具说明](../README.md#实车快速标定点位)。
 
 ## 4. 增加新的速度模式
 
-每个速度模式独立配置 Nav2 参数，共用同一套直接导航流程。点位的 `mode` 对应模式文件中的 `id`，`name` 用于菜单显示。内置 `speed_1.yaml` 为快速档，`speed_2.yaml` 为慢速档，字段含义见[内置速度模式](parameter_modification.md#33-改内置速度模式)。
+每个速度模式独立配置 Nav2 参数，共用同一套直接导航流程。点位的 `mode` 对应模式文件中的 `id`，`name` 用于菜单显示。`speed_1.yaml` 为快速档，`speed_2.yaml` 为慢速档，字段含义见[内置速度模式](parameter_modification.md#33-改内置速度模式)。
 
 以新增 `speed_4.yaml` 为例，修改文件链如下：
 
@@ -229,12 +227,9 @@ parameters:
   controller_server:
     ros__parameters:
       FollowPath:
-        translation_kpx: 3.5
-        translation_kpy: 3.5
-        v_linear_minx: -0.25
-        v_linear_maxx: 0.25
-        v_linear_miny: -0.25
-        v_linear_maxy: 0.25
+        translation_kp: 3.5
+        v_linear_min: -0.25
+        v_linear_max: 0.25
   velocity_smoother:
     ros__parameters:
       max_velocity: [0.25, 0.25, 0.5]
@@ -253,13 +248,7 @@ cp src/config/framework/on_demand/modes/speed_4.yaml src/function/config/on_dema
 "framework/on_demand/modes/speed_4.yaml": "src/function/config/on_demand/modes/speed_4.yaml"
 ```
 
-模式编号使用未占用的正整数；本例使用 4。编号只选择参数表，不决定导航算法。
-
-| 复制来源 | 顶层字段 | 执行流程 |
-|---|---|---|
-| `speed_1.yaml`、`speed_2.yaml` 或速度模式模板 | `id`、`name`、`parameters` | 应用本文件参数，直接导航至最终目标 |
-
-复制后修改编号、名称和参数，新文件与来源文件互相独立。每份文件只包含一组 `parameters`，一次导航从开始到结束使用这组参数。调整 PID、速度和减速参数即可定义新的速度档位。
+模式编号使用未占用的正整数，例如 4。可完整复制快速档、慢速档或速度模式模板，修改 `id`、`name` 和参数值。每个文件均只包含独立的 `parameters`，统一执行“应用参数 → 发送最终目标 → 等待结果 → 恢复参数”的导航流程；复制后的模式不依赖来源文件。
 
 新增已有 Nav2 参数时，在本文件对应的节点块中按原名填写；参数必须已由远端节点声明并支持动态更新。未列出的字段保持运行中的值。新增控制算法或远端尚未声明的字段，需要同时实现对应 Python 流程或 Nav2 插件逻辑。
 
@@ -351,7 +340,6 @@ def run(ctx, request):
 | `ctx.rotate(angle_degrees)` | 原地闭环旋转，角度单位为度 |
 | `ctx.move(local_x, local_y, distance)` | 沿起始车体方向定距移动，距离单位 m |
 | `ctx.move_offset(offset)` | 根据 KFS 平面偏置闭环移动 |
-| `ctx.align_region(mode=1)` | 导航至当前区域中心 |
 | `ctx.navigate_offset(offset, mode=1)` | 将车体偏置转换为地图导航目标 |
 | `ctx.uphill()` | 使用上坡配置执行运动 |
 | `ctx.stair(x, y, speed, name='登阶')` | 沿指定车体方向登阶，等待停止信号 |
@@ -374,7 +362,7 @@ cp -r docs/templates/continuous/chairman_status_example src/function/detail/cont
 ```
 
 2. 编辑 **`src/function/detail/continuous/chairman_status_example/status_node.py`**，在里面写订阅、定时器等处理逻辑。模板每秒输出一次状态。需要改包名时同步修改本目录 `package.xml`、`CMakeLists.txt`。
-3. 若需要自己的参数，在该包下新建 `config/`，由 CMake 安装并由节点/launch 显式读取。micro-ROS 配置的具体路径、字段和生效步骤见[参数配置文档：micro-ROS 参数](parameter_modification.md#4-micro-ros-参数)；odometry 的初始位姿与区域设置见[参数配置文档：odometry 参数](parameter_modification.md#6-odometry-参数)。单纯创建 YAML 不会自动加载。
+3. 若需要自己的参数，在该包下新建 `config/`，由 CMake 安装并由节点/launch 显式读取。micro-ROS 配置的具体路径、字段和生效步骤见[参数配置文档：micro-ROS 参数](parameter_modification.md#4-micro-ros-参数)；odometry 的初始位姿与点位显示设置见[参数配置文档：odometry 参数](parameter_modification.md#6-odometry-参数)。单纯创建 YAML 不会自动加载。
 4. 构建并启动：
 
 ```bash

@@ -86,11 +86,11 @@ parameters:
         max_velocity_scaling_factor_rate: 0.9
 
         #末端减速
-        mid_distance : 0.60
+        mid_distance : 0.45
         last_distance : 0.05
-        mid_speed : 0.45
-        last_speed : 0.08
-        low_speed_threshold : 0.35
+        mid_speed : 0.35
+        last_speed : 0.05
+        low_speed_threshold : 0.48
         max_decel_step : 0.02
 
   velocity_smoother:

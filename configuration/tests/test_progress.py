@@ -32,11 +32,11 @@ def test_nonterminal_keeps_boundaries_without_periodic_log_spam():
     state, stream, messages, now = reporter()
     for i in range(100):
         now[0] = i * 0.3
-        state.update(f'距目标 {i}m')
+        state.update(f'距提前点 {i}m')
         state.render()
     assert stream.getvalue() == ''
     assert len(messages) == 1
-    state.end_stage('导航动作已结束')
+    state.end_stage('第一段动作已结束')
     assert len(messages) == 1
     state.finish(True)
     assert len(messages) == 2
@@ -48,7 +48,7 @@ def test_tty_updates_one_line_throttles_and_clears_before_logs(monkeypatch):
     state, stream, messages, now = reporter(tty=True)
     monkeypatch.setattr(progress.os, 'get_terminal_size', lambda *_: SimpleNamespace(columns=42))
     stream.fileno = lambda: 1
-    state.update('距目标 0.300m | 朝向误差 10°')
+    state.update('距提前点 0.300m | 朝向误差 10°')
     state.render()
     first = stream.getvalue()
     now[0] = 0.1

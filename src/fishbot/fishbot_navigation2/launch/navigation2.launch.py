@@ -17,8 +17,8 @@ def generate_launch_description():
     gicp_dir = get_package_share_directory('small_gicp_relocalization')
 
     rviz_config_dir = os.path.join(fishbot_navigation2_dir, 'config', 'rviz', 'nav2_default_view.rviz')
-    map_yaml_path = os.path.join(fishbot_navigation2_dir, 'maps', 'room.yaml')
-    pcd_file_path = os.path.join(fishbot_navigation2_dir, 'PCD', 'final.pcd')
+    map_yaml_path = os.path.join(fishbot_navigation2_dir, 'maps', 'silou_edited.yaml')
+    pcd_file_path = os.path.join(fishbot_navigation2_dir, 'PCD', 'silou_caijain.pcd')
     nav2_param_path = os.path.join(fishbot_navigation2_dir, 'config', 'nav2_params.yaml')
     urdf_path = os.path.join(fishbot_navigation2_dir, 'urdf', 'my_robot', 'my_robot.xacro')
 

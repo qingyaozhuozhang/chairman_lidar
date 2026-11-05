@@ -4,6 +4,7 @@ find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
 ament_python_install_package(${PROJECT_NAME} PACKAGE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 ament_python_install_package(chairman_tasks PACKAGE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../detail/on_demand")
+install(CODE "file(REMOVE_RECURSE \"\${CMAKE_INSTALL_PREFIX}/${PYTHON_INSTALL_DIR}/chairman_tasks/special/align_region\")")
 install(PROGRAMS resource/sum DESTINATION lib/${PROJECT_NAME})
 install(PROGRAMS resource/preset_nav_node DESTINATION lib/${PROJECT_NAME})
 # 删除已停用的配置文件名，避免增量安装后出现重复模式编号。
