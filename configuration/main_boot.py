@@ -77,7 +77,7 @@ def build_commands(root, selected_pose, no_micro=False, no_sum=False, headless=F
     commands = []
     if not no_micro:
         commands.append(('Micro ROS Agent', common + 'exec ros2 run micro_ros agent'))
-    # 导航服务统一从这个 launch 进入，不在这里重复启动雷达、FAST-LIO 或 Nav2。
+    # 导航服务统一从这个 launch 进入，不在这里重复启动雷达、Point-LIO 或 Nav2。
     commands.append(('Navigation2', common + 'exec ros2 launch fishbot_navigation2 navigation2.launch.py'))
     if not no_sum:
         entry = 'preset_nav_node' if headless else 'sum'

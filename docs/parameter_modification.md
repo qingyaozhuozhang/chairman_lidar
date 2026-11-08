@@ -15,7 +15,8 @@ src/config/                              # 中央参数配置入口，使用 syn
 │       ├── speed_1.yaml                 # 快速档
 │       ├── speed_2.yaml                 # 慢速档
 │       └── special.yaml                 # 特殊运动和检测参数
-├── fast_lio/                            # mid360.yaml 及其他雷达配置
+├── point_lio/                           # 导航用 MID360 参数
+├── fast_lio/                            # 独立建图参数
 ├── fishbot_navigation2/
 │   ├── nav2_params.yaml                 # Nav2 启动基准
 │   └── rviz/*.rviz
@@ -41,7 +42,7 @@ configuration/main_boot.py               # 场地选择与启动入口
 
 | 类型 | 编辑入口 | 生效方式 |
 |---|---|---|
-| 雷达、FAST-LIO、Nav2、odometry | `src/config/` 下对应目录 | `sync --files ...`，重启对应节点 |
+| 雷达、Point-LIO、FAST-LIO、Nav2、odometry | `src/config/` 下对应目录 | `sync --files ...`，重启对应节点 |
 | 点位、功能登记、已有模式及特殊运动控制 | `src/config/framework/on_demand/` | 同步相应文件，重启 Function sum |
 | 新增模式文件或功能 Python 代码 | 中央/包内模式文件、`detail/on_demand/` | 登记映射或模块，构建 `framework` 并重启 |
 | micro-ROS 启动参数 | `src/function/detail/continuous/micro_ros/config/boot.yaml` | 构建 `micro_ros`，重启 Agent |
@@ -81,6 +82,7 @@ ros2 run chairman_config sync --files framework/on_demand/points.yaml framework/
 
 | `--files` 名称 | 源码目标 |
 |---|---|
+| `point_lio/mid360.yaml` | `src/fishbot/point_lio/config/mid360.yaml` |
 | `fast_lio/mid360.yaml` | `src/fishbot/fast_lio/config/mid360.yaml` |
 | `fishbot_navigation2/nav2_params.yaml` | `src/fishbot/fishbot_navigation2/config/nav2_params.yaml` |
 | `livox_ros_driver2/MID360_config.json` | `src/fishbot/livox_ros_driver2/config/MID360_config.json` |
@@ -309,25 +311,34 @@ ros2 run micro_ros agent
 ```
 
 
-## 5. FAST-LIO 与 Livox 驱动参数
+## 5. 里程计、建图与 Livox 驱动参数
 
-### 5.1 FAST-LIO
+### 5.1 Point-LIO 导航与 FAST-LIO 建图
 
-文件：**`src/config/fast_lio/mid360.yaml`**。例如在原 `/**.ros__parameters` 下修改滤波尺寸：
+导航参数：**`src/config/point_lio/mid360.yaml`**；独立建图参数：**`src/config/fast_lio/mid360.yaml`**。两者分别同步到对应功能包的 `config/mid360.yaml`，不会相互覆盖。
 
-```yaml
-/**:
-  ros__parameters:
-    filter_size_surf: 0.15
-    filter_size_map: 0.15
-```
+| 参数项 | 用途 |
+|---|---|
+| `common.lid_topic`、`common.imu_topic` | Livox 点云与 IMU 输入话题 |
+| `preprocess.blind`、`point_filter_num` | 最近测量距离与预处理取点间隔 |
+| `filter_size_surf`、`filter_size_map` | 匹配扫描与局部地图的体素边长，单位 m |
+| `mapping.extrinsic_T/extrinsic_R` | 雷达到 IMU 的平移和旋转外参，按实际安装标定 |
+| `publish.scan_bodyframe_pub_en` | 输出机体坐标系点云，导航地形分析需要开启 |
+| `pcd_save.pcd_save_en` | 是否累计点云并保存 PCD；导航默认关闭，`main_map` 建图时开启 |
 
-同文件中的 `common.lid_topic`、`common.imu_topic` 是输入话题，`preprocess.blind` 为近距过滤参数，`mapping.extrinsic_T/extrinsic_R` 为外参。保留嵌套层次，数值以标定结果为准。
+Point-LIO 保留 `/Odometry`、`/cloud_registered` 和 `/cloud_registered_body` 接口，局部 TF 为 `camera_init → body`。`mapping.acc_norm` 应与驱动发布的加速度单位对应；两种算法的噪声模型不同，不应直接按参数名称逐项复制噪声数值。配置默认值用于接入现有 MID360，实车精度、漂移与延迟需用同一工况验证。
 
 ```bash
+# 修改导航参数
+ros2 run chairman_config sync --files point_lio/mid360.yaml
+colcon build --packages-select point_lio
+# 修改独立建图参数
 ros2 run chairman_config sync --files fast_lio/mid360.yaml
+colcon build --packages-select fast_lio
+source install/setup.bash
 ```
 
+重新启动对应入口后生效。`main_boot` 的导航链路使用 Point-LIO；`main_map` 只使用 FAST-LIO 建图。`main_map` 在 Ctrl+C 后等待原始地图保存，再按 `tool/downsample_map.py` 的体素尺寸生成导航用 `final.pcd`，详见 [常用命令](regular_commands.md)。
 
 ### 5.2 MID360 网络
 
@@ -384,17 +395,17 @@ ros2 run chairman_config sync --files odometry/initial_poses.yaml
 
 同步后重启 Navigation2 与 odometry，并使用同一场地编号。启动时应将小车放在对应点位且朝向一致，等待 `[定位就绪] GICP 首次配准收敛` 后核对 RViz 位姿。仅修改磁盘文件不会重置已经运行的定位节点。
 
-### 6.2 红蓝点位显示
+### 6.2 红蓝点位标注地图
 
-红蓝点位使用 `src/function/config/on_demand/points.yaml` 中的 `red`、`blue` 坐标，在 RViz 的 `Navigation Points` 图层同时显示。`points_visualizer` 由 odometry launch 启动，每秒检查配置变化；定点标定保存后无需重启显示节点。动态目标的空坐标不显示，坐标单位 m，参考系为 `map`。
+运行 `ros2 run tool show_points`，离线读取 `src/function/config/on_demand/points.yaml` 中的 `red`、`blue` 点位，在栅格地图上绘制对应颜色的点，输出到 `src/function/config/on_demand/points_map/`。使用 `--map 地图.yaml` 指定底图；默认使用 `silou_edited.yaml`。地图 YAML 的 `image`、`resolution` 和 `origin` 决定图像与 `map` 坐标的转换，不能只更换图片而沿用不匹配的分辨率或原点。
 
-odometry 负责地图位姿输出与点位显示，不按区域调整代价地图。膨胀半径由 `nav2_params.yaml` 中局部、全局代价地图各自的 `inflation_layer.inflation_radius` 配置，修改后同步并重启 Navigation2。
+输出为彩色 PNG 及地图描述，再次运行覆盖之前的生成结果，不改原始地图。点位标定后手动运行工具更新标注；总程序不常驻显示节点。odometry 只负责地图位姿输出，代价地图膨胀半径仍由 `nav2_params.yaml` 中局部、全局 `inflation_layer.inflation_radius` 配置。
 
 ## 7. 导航 launch、地图与 RViz
 
 文件：**`src/fishbot/fishbot_navigation2/launch/navigation2.launch.py`**。
 
-这里修改节点启动关系、TF 安装偏移、两个点云转扫描节点的高度/距离范围及地图文件路径。例如要换 2D 地图：把新地图和其描述放入 `src/fishbot/fishbot_navigation2/maps/`，将 `map_yaml_path` 的 `'room.yaml'` 改为新文件名。地图 YAML 内的 `image` 应指向该地图对应图像，采用相对路径。
+这里修改节点启动关系、TF 安装偏移、两个点云转扫描节点的高度/距离范围及地图文件路径。例如要换 2D 地图：把新地图和其描述放入 `src/fishbot/fishbot_navigation2/maps/`，通过 `ros2 launch fishbot_navigation2 navigation2.launch.py map:=/地图绝对路径.yaml` 指定底图，或修改 `map` 启动参数的默认值。`pcd_map` 参数指定配套 PCD，默认 `PCD/final.pcd`。地图 YAML 内的 `image` 应指向该地图对应图像，采用相对路径。
 
 若要调整扫描高度，在此 launch 的 `pointcloud_to_laserscan_local`、`pointcloud_to_laserscan_global` 对应 `parameters` 中修改 `min_height/max_height`；局部和全局是两份配置，需要分别确认。
 
@@ -413,7 +424,7 @@ ros2 run chairman_config sync --files fishbot_navigation2/rviz/nav2_default_view
 
 ### 7.1 GICP 配准与地图坐标
 
-地图处理入口：**`tool/downsample_map.py`**。地图体素边长定义为 `GLOBAL_LEAF_SIZE = 0.05`（m），脚本将 `PCD/base.pcd` 离线处理为 `PCD/final.pcd`，定位节点直接加载处理结果。GICP 不再对地图降采样；实时点云使用 `final.pcd` 文件头记录的同一体素边长，在 GICP 内按相同的每格质心规则处理。FAST-LIO 的滤波和输出配置保持独立。
+地图处理入口：**`tool/downsample_map.py`**。地图体素边长定义为 `GLOBAL_LEAF_SIZE = 0.05`（m），脚本将 `PCD/base.pcd` 离线处理为 `PCD/final.pcd`，定位节点直接加载处理结果。GICP 不再对地图降采样；实时点云使用 `final.pcd` 文件头记录的同一体素边长，在 GICP 内按相同的每格质心规则处理。Point-LIO 的局部里程计滤波与 GICP 地图处理相互独立。
 
 建图点与启动点统一配置在 `odometry/initial_poses.yaml`；其余配准、坐标系与发布参数采用定位节点默认值。导航 launch 启动一个 GICP 节点，统一负责初始化、配准和 `map → odom` 发布：
 
@@ -427,7 +438,7 @@ ros2 run chairman_config sync --files fishbot_navigation2/rviz/nav2_default_view
 | 配准频率 | `registration_rate_hz: 2.0`，每轮处理累积点云 |
 | TF 频率与时间戳 | `publish_rate_hz: 20.0`；`time_offset_sec: 0.1` 表示输出时间戳相对当前 ROS 时间的偏移 |
 | 地图降采样 | `tool/downsample_map.py` 的 `GLOBAL_LEAF_SIZE`，默认 0.05 m；修改后重新生成 `final.pcd` 并构建地图包 |
-| 实时点云处理 | FAST-LIO 输出 `/cloud_registered`；GICP 转换到 `odom`、过滤非有限点，再按 PCD 文件头中的 `chairman_lidar_voxel_size` 取每格质心并计算协方差 |
+| 实时点云处理 | Point-LIO 输出 `/cloud_registered`；GICP 转换到 `odom`、过滤非有限点，再按 PCD 文件头中的 `chairman_lidar_voxel_size` 取每格质心并计算协方差 |
 | 匹配参数 | 默认 `num_threads: 16`、`num_neighbors: 10`、`max_dist_sq: 4.0`；最后一项为对应点距离平方上限，单位 m² |
 
 用 `T_A_B` 表示将 B 系坐标转换为 A 系坐标的变换，初始化关系为：
@@ -499,6 +510,6 @@ source install/setup.bash
 
 RViz 的 `Message Filter dropping message` 表示显示所需的坐标变换不可用。`the timestamp on the message is earlier than all the data in the transform cache` 表示消息请求的历史时刻早于可用 TF 历史；它与 GICP 的收敛判定无关。
 
-例如 Fixed Frame 为 `map` 时，`body` 点云显示需要同一消息时刻的 `map → odom → camera_init → body` 变换链。雷达点云先到达、FAST-LIO 或定位 TF 后就绪时，启动早期消息可能一直排队，随后被丢弃。旧消息的时间戳与打印丢弃日志的时间戳不同，因此启动数据的丢弃提示也可能晚几秒出现。
+例如 Fixed Frame 为 `map` 时，`body` 点云显示需要同一消息时刻的 `map → odom → camera_init → body` 变换链。雷达点云先到达、Point-LIO 或定位 TF 后就绪时，启动早期消息可能一直排队，随后被丢弃。旧消息的时间戳与打印丢弃日志的时间戳不同，因此启动数据的丢弃提示也可能晚几秒出现。
 
 若只在启动阶段出现，后续点云持续更新，应核对初始化时序；若运行中持续出现，应核对点云与 TF 时间戳、各节点的 `use_sim_time`、设备时钟同步和消息处理延迟。延长缓存不能补出启动前从未发布的 TF；不能通过把旧点云时间戳改为当前时间来掩盖问题，否则移动时的坐标变换会失真。

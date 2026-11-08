@@ -409,7 +409,8 @@ def run_mode(collector, path, timeout, workspace=None):
                     else:
                         print(f'坐标未变化：{target}')
                 print('两份源码点位已更新，保留各自的朝向、名称和模式。'
-                      '地图标记自动刷新；构建 framework 后，重启功能进程加载导航目标。')
+                      '手动运行 ros2 run tool show_points 更新点位地图；'
+                      '构建 framework 后，重启功能进程加载导航目标。')
             except (OSError, ValueError, RuntimeError, yaml.YAMLError) as exc:
                 print(f'本次标定未完成：{exc}')
 

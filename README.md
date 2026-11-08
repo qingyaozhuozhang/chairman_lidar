@@ -1,6 +1,6 @@
 # chairman_lidar
 
-面向 BR 建筑机器人的 ROS 2 实车定位与导航工程，集成 Livox MID360、FAST-LIO、small_gicp 地图配准和 Nav2 全向运动控制。工程统一管理场地选择、设备通信、导航启动、按需任务及配置同步。
+面向 BR 建筑机器人的 ROS 2 实车定位与导航工程，集成 Livox MID360、Point-LIO 局部里程计、FAST-LIO 独立建图、small_gicp 地图配准和 Nav2 全向运动控制。工程统一管理场地选择、设备通信、导航启动、按需任务及配置同步。
 
 定位链路由 `small_gicp_relocalization_node` 根据所选启动点初始化，对实时点云与点云地图进行配准，并持续发布 Nav2 使用的 `map → odom`。地图、初始位姿、底盘限制应与实际机器人及场地一致。
 
@@ -20,7 +20,8 @@ chairman_lidar/
 ├── src/
 │   ├── config/                         # ROS 包 chairman_config：中央参数配置服务（重要参数）
 │   │   ├── framework/on_demand/        # 点位、特殊任务和速度模式配置
-│   │   ├── fast_lio/                   # MID360 输入、滤波和安装外参
+│   │   ├── point_lio/                  # 导航用 MID360 输入、滤波和安装外参
+│   │   ├── fast_lio/                   # 独立建图参数
 │   │   ├── fishbot_navigation2/         # Nav2 启动基准与 RViz 配置
 │   │   ├── livox_ros_driver2/           # 雷达网络配置
 │   │   ├── odometry/                   # 场地初始位姿
@@ -29,7 +30,8 @@ chairman_lidar/
 │   │   └── sync.py                     # 参数同步配置文件
 │   ├── fishbot/                        # 驱动、定位、导航及消息接口
 │   │   ├── fishbot_navigation2/launch/navigation2.launch.py
-│   │   ├── fast_lio/                   # 高精度、实时里程计与建图算法
+│   │   ├── point_lio/                  # 导航使用的实时里程计与点云
+│   │   ├── fast_lio/                   # main_map 使用的独立建图算法
 │   │   ├── livox_ros_driver2/          # livox_mid360雷达驱动
 │   │   ├── small_gicp_relocalization/   # gicp点云配准算法
 │   │   ├── pb_omni_pid_pursuit_controller/ #全向轮底盘控制器
@@ -52,7 +54,7 @@ chairman_lidar/
 │       │   │   ├── fixed_point/task.py # 统一导航流程及参数应用
 │       │   │   └── special/            # 特殊任务入口与控制实现
 │       │   └── continuous/            # 独立运行的持续功能
-│       │       ├── odometry/           # /odom_map 发布与红蓝点位显示
+│       │       ├── odometry/           # /odom_map 位姿发布
 │       │       └── micro_ros/
 │       │           ├── launcher/       # ROS 包 micro_ros 的构建文件
 │       │           ├── agent.py        # Agent 启动入口
@@ -60,7 +62,8 @@ chairman_lidar/
 │       │           └── src/            # Agent、消息和 setup 源码包
 │       └── config/on_demand/           # framework 构建、安装使用的配置副本
 ├── configuration/                      
-│   ├── main_boot.py                    # 总启动文件
+│   ├── main_boot.py                    # 导航总启动文件
+│   ├── main_map.py                     # 雷达建图、保存与离线降采样
 │   └── tests/
 ├── tool/                               # 位姿读取、点位标定与地图降采样
 ├── docs/                               # 参数说明、功能开发与模板
@@ -124,14 +127,15 @@ source install/setup.bash
 
 如果首次构建停在 `micro_ros_agent:build 6%`，查看 `log/latest_build/micro_ros_agent/stdout_stderr.log`。`Performing download step (git clone) for 'xrceagent'` 表示正在从 GitHub 下载依赖；连接超时会自动重试，需恢复网络后重新构建。成功下载和编译后，保留 `build/` 即可复用依赖缓存。
 
-目前共 19 个包（包含 micro-ROS Agent、消息包和 setup 工具）。新终端需要重新 `source install/setup.bash`。
+工程包含驱动、定位、导航、工具及 micro-ROS Agent 等 ROS 包。新终端需要重新 `source install/setup.bash`。
 
 ### 2.3 首次运行前确认参数
 
 | 项目 | 编辑位置 | 需要确认的内容 |
 |---|---|---|
 | MID360 网络 | `src/config/livox_ros_driver2/MID360_config.json` | 雷达 IP、主机接收 IP，与实际网卡设置一致 |
-| 雷达与 IMU 配置 | `src/config/fast_lio/mid360.yaml` | 输入话题、滤波参数、安装外参 |
+| 导航雷达与 IMU 配置 | `src/config/point_lio/mid360.yaml` | Point-LIO 输入话题、滤波参数、安装外参 |
+| 独立建图配置 | `src/config/fast_lio/mid360.yaml` | FAST-LIO 滤波、外参和 PCD 保存 |
 | Nav2 基础配置 | `src/config/fishbot_navigation2/nav2_params.yaml` | 机器人尺寸、控制器、代价地图等参数 |
 | GICP 地图降采样 | `tool/downsample_map.py` | `GLOBAL_LEAF_SIZE` 为离线地图体素边长，默认 0.05 m；处理 `base.pcd` 生成 `final.pcd` |
 | 建图点与场地初始位姿 | `src/config/odometry/initial_poses.yaml` | PCD 建图原点与 4 个场地的启动位姿 |
@@ -167,11 +171,11 @@ ros2 run configuration main_boot
 | 终端 | 实际入口 | 职责 |
 |---|---|---|
 | Micro ROS Agent | `ros2 run micro_ros agent` | UDP IPv4 通信，默认监听 8888 端口 |
-| Navigation2 | `ros2 launch fishbot_navigation2 navigation2.launch.py` | 雷达、FAST-LIO、地形分析、Nav2、RViz 等导航服务 |
+| Navigation2 | `ros2 launch fishbot_navigation2 navigation2.launch.py` | 雷达、Point-LIO、地形分析、Nav2、RViz 等导航服务 |
 | Function sum | `ros2 run framework sum` | 功能选择与执行 |
 | Odometry | `ros2 run odometry odometry` | 地图位姿输出与红蓝点位显示 |
 
-导航 launch 读取 odometry 包内的 `initial_poses.yaml`：`mapping_pose` 保存 PCD 建图原点在 `map` 中的位姿，转换为固定的 `map_to_pcd`；`poses` 中的 1～4 号保存底盘启动位姿，由 `SELECTED_POSE` 选择。定位节点等待本次 FAST-LIO 的局部里程计 TF，结合两组位姿计算配准初值，同时发布初始 `map → odom`。首次配准成功后，以有效匹配结果持续修正该变换。同一份 PCD 切换启动点时，`mapping_pose` 保持不变。
+导航 launch 读取 odometry 包内的 `initial_poses.yaml`：`mapping_pose` 保存 PCD 建图原点在 `map` 中的位姿，转换为固定的 `map_to_pcd`；`poses` 中的 1～4 号保存底盘启动位姿，由 `SELECTED_POSE` 选择。定位节点等待本次 Point-LIO 的局部里程计 TF，结合两组位姿计算配准初值，同时发布初始 `map → odom`。首次配准成功后，以有效匹配结果持续修正该变换。同一份 PCD 切换启动点时，`mapping_pose` 保持不变。
 
 建图点初值采用 1 号点，定义 PCD 的零位姿。选择其他启动点时，先计算它相对建图点的位置与朝向用于初始化配准；输出端以所选启动点为地图参考，将 GICP 结果转换到该参考系后映射回 `map`。建图点独立保存，修改 1～4 号启动点不会自动改变地图原点。
 
@@ -262,7 +266,7 @@ ros2 run framework sum
 # 全覆盖：覆盖 manifest.json 登记的全部配置
 ros2 run chairman_config sync --all
 # 指定一个或多个文件覆盖
-ros2 run chairman_config sync --files fast_lio/mid360.yaml
+ros2 run chairman_config sync --files point_lio/mid360.yaml
 # 帮助
 ros2 run chairman_config sync --help
 ```
@@ -301,7 +305,7 @@ ros2 run tool point
 
 先启动导航和 `odometry`，等待 GICP 匹配成功并核对 RViz 地图位姿。在菜单中选择固定点或启动点，将机器人停稳后按回车，即采集并保存当前位姿。固定点需选择红蓝半场和编号；固定点选菜单 `1`；启动点先选菜单 `2`，再选启动编号 1～4，并将车头调整到实际启动朝向。可连续选择下一点，无需重启工具。
 
-工具直接订阅 `/odom_map`（`custom_msg/msg/PoseEuler`），不读取 `/rosout` 日志，也不把 FAST-LIO 原始 `/Odometry` 坐标直接写成地图点位。每次取确认后收到的 **10 条有效消息**，x/y/z 分别去掉一个最大值和一个最小值，用剩余 8 个求平均；yaw 先处理 ±π 环绕再去极值。固定点只使用平均 x/y，启动点还将平均 yaw 转成 qz/qw 写入配置。采集速度取决于实际话题频率（例如 10 Hz 约 1 秒），不会等待日志节流周期。默认 5 秒超时，消息不足时不写入。
+工具直接订阅 `/odom_map`（`custom_msg/msg/PoseEuler`），不读取 `/rosout` 日志，也不把 Point-LIO 原始 `/Odometry` 坐标直接写成地图点位。每次取确认后收到的 **10 条有效消息**，x/y/z 分别去掉一个最大值和一个最小值，用剩余 8 个求平均；yaw 先处理 ±π 环绕再去极值。固定点只使用平均 x/y，启动点还将平均 yaw 转成 qz/qw 写入配置。采集速度取决于实际话题频率（例如 10 Hz 约 1 秒），不会等待日志节流周期。默认 5 秒超时，消息不足时不写入。
 
 | 模式 | 写入位置 | 修改内容与生效方式 |
 |---|---|---|
@@ -314,17 +318,37 @@ ros2 run tool point
 
 修改工具代码后执行 `colcon build --packages-select tool`、`source install/setup.bash`。也可在已加载 ROS 环境的终端直接运行 `python3 tool/point.py`。
 
-### 红蓝点位显示
-
-`ros2 run odometry odometry` 同时启动位姿输出与 `points_visualizer`。RViz 默认启用 `Navigation Points`，订阅 `/navigation_points`：红方点为红色 `R编号`，蓝方点为蓝色 `B编号`，两方同时显示在 `map` 坐标系中。空坐标的动态目标不显示。
-
-实现位于 `src/function/detail/continuous/odometry/src/points_visualizer.cpp`。源码工作空间读取 `src/function/config/on_demand/points.yaml`，每秒检查一次内容变化，point 保存后自动刷新；仅部署安装目录时读取同一安装树中的 framework 配置。文件暂时无效时保留上次有效标记，删除点位后清除旧标记。显示更新不等同于导航目标更新，Function sum 仍需按配置流程重新加载。
-
-单独调试显示节点：
+### 红蓝点位标注地图
 
 ```bash
-ros2 run odometry points_visualizer --ros-args -p points_file:="$(pwd)/src/function/config/on_demand/points.yaml"
+ros2 run tool show_points
+# 使用其他栅格地图
+ros2 run tool show_points --map src/fishbot/fishbot_navigation2/maps/room_zhengzhi.yaml
 ```
+
+`tool/show_points.py` 离线读取 `src/function/config/on_demand/points.yaml` 和地图 YAML，将红方点标为红色、蓝方点标为蓝色。默认底图为 `silou_edited.yaml`；应与当前导航使用的地图保持一致。投影使用地图的分辨率、原点位置与偏航角，空坐标的动态目标和地图外点位不绘制。
+
+输出放在 `src/function/config/on_demand/points_map/`，再次运行覆盖生成结果。彩色标注使用 PNG，因为 PGM 只能保存灰度；地图尺寸与坐标关系保持不变。原始地图和点位配置保持不变，标注图仅供核对点位，不替换导航底图。工具执行完退出，总启动和 odometry 均不启动显示节点；重新标定点位后手动运行此命令更新图片。
+
+### 独立建图
+
+```bash
+ros2 run configuration main_map
+```
+
+该入口启动 Livox 驱动和 FAST-LIO 的 `start.launch.py`。完成扫描后按 Ctrl+C，等待 FAST-LIO 将本次点云保存到 `src/fishbot/fast_lio/PCD/scans.pcd`，随后自动运行离线降采样，生成 `src/fishbot/fishbot_navigation2/PCD/final.pcd`。两条路径均根据当前工程位置解析，移动或复制工程后无需修改用户名和绝对路径。
+
+仅在本次成功保存了新的有效 PCD 后进行降采样；无新点云、保存失败或降采样失败时保留原有 `final.pcd`。请等待终端报告处理结束，再关闭终端。建图入口与导航入口分别运行，避免重复启动同一雷达驱动。
+
+```bash
+# 仅检查路径及启动命令，不连接设备
+ros2 run configuration main_map --dry-run
+# 更新导航安装包中的地图
+colcon build --packages-select fishbot_navigation2
+source install/setup.bash
+```
+
+导航默认读取 `PCD/final.pcd`。更换地图后还需核对配套栅格地图和 `initial_poses.yaml` 中的 `mapping_pose`；地图降采样不完成坐标系标定。
 
 ### 地图降采样
 
@@ -346,7 +370,7 @@ python3 tool/downsample_map.py input.pcd output.pcd --global-leaf-size 0.05
 
 自定义路径相对于当前终端目录，输入输出必须不同，输出目录须存在。输出为二进制 XYZ PCD，并在文件头注释 `chairman_lidar_voxel_size` 中记录体素边长；GICP 使用 XYZ 并重新计算协方差，不使用原始文件中的 intensity、normal 或 curvature 字段。脚本写入完成后才替换输出文件，输入地图始终保留。
 
-GICP 直接使用离线地图，不再对地图降采样。FAST-LIO 保持原有输出；GICP 从 `final.pcd` 文件头读取体素边长，用相同尺度与每格质心规则处理实时点云，再进行配准，不需要单独配置实时体素参数。地图读取、搜索树建立和协方差计算仍需执行，实际耗时可查看 `[地图就绪]` 日志。离线降采样不改变 `mapping_pose` 或启动点的坐标含义。
+GICP 直接使用离线地图，不再对地图降采样。Point-LIO 提供实时点云；GICP 从 `final.pcd` 文件头读取体素边长，用相同尺度与每格质心规则处理实时点云，再进行配准，不需要单独配置实时体素参数。地图读取、搜索树建立和协方差计算仍需执行，实际耗时可查看 `[地图就绪]` 日志。离线降采样不改变 `mapping_pose` 或启动点的坐标含义。
 
 ## 6. 新功能、新参数从哪里加
 
