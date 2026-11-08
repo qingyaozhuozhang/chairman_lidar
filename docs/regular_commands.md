@@ -147,3 +147,31 @@ ros2 run tool show_points --map src/fishbot/fishbot_navigation2/maps/room_zhengz
 ```
 
 标注图片为 `src/function/config/on_demand/points_map/points_map.png`，同目录生成地图描述 `points_map.yaml`，再次运行覆盖生成结果。红蓝点位采用 `src/function/config/on_demand/points.yaml`；底图默认 `silou_edited.yaml`。原始地图保持不变，标注图仅供查看。
+
+
+### 测试链路问题
+1.检查Map Server
+- `ros2 lifecycle get /map_server`
+- 输出额结果
+
+  - | 输出             | 含义                       |
+    | ---------------- | -------------------------- |
+    | active [3]       | （正常）地图服务器已经激活 |
+    | inactive [2]     | （异常）已配置，但没有激活 |
+    | unconfigured [1] | （异常）尚未完成配置       |
+
+2.检查Planner Server
+
+- `ros2 lifecycle get /planner_server`
+
+3.检查Controller Server
+
+- `ros2 lifecycle get /controller_server`
+
+4.确认静态地图有没有发布
+
+- `ros2 topic echo /map --once --qos-durability transient_local --field info`
+
+5.检查GICP和Fast_lio的TF
+
+- `ros2 run tf2_ros tf2_echo map base_footprint`
