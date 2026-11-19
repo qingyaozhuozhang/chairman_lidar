@@ -139,12 +139,12 @@ def navigate(node, x, y, qz, qw, desc, timeout_sec=None, speed_profile=1,
 def is_interrupt(node, distance):
     if(distance <= 0.15):
         msg = Int8()
-        msg.data = 1
+        msg.data = 0
         node.is_interrupt_pub.publish(msg)
         return msg.data
     else:
         msg = Int8()
-        msg.data = 0
+        msg.data = 1
         node.is_interrupt_pub.publish(msg)
         return msg.data
     
