@@ -50,12 +50,12 @@ parameters:
         rotate_to_goal_heading_only: true  # 对照项
         yaw_hold_tolerance: 0.01  # 对照项
         use_rotate_to_heading_treshold: 0.1  # 对照项
-        min_approach_linear_velocity: 0.05
+        min_approach_linear_velocity: 0.01
         min_approach_angular_velocity: 0.1
         min_approach_angular_velocity_tolerance: 0.01  # 对照项
         approach_velocity_scaling_dist: 0.3  # 对照项
         v_linear_min: -0.5  # 对照项
-        v_linear_max: 0.5
+        v_linear_max: 0.2
         v_angular_min: -1.5  # 对照项
         v_angular_max: 1.5
         curvature_min: 0.4  # 对照项
