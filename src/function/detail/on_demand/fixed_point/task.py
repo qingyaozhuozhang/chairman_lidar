@@ -5,6 +5,7 @@ import time
 from action_msgs.msg import GoalStatus
 from nav2_msgs.action import NavigateToPose
 from rclpy.parameter import Parameter
+from std_msgs.msg import Int8
 
 from chairman_tasks.special import motion
 
@@ -32,6 +33,12 @@ def navigate(node, x, y, qz, qw, desc, timeout_sec=None, speed_profile=1,
     goal_msg.pose.pose.position.y = float(y)
     goal_msg.pose.pose.orientation.z = float(qz)
     goal_msg.pose.pose.orientation.w = float(qw)
+
+    node_sign = 1
+    node_px = 0
+    node_py =0
+    node_yaw = 0
+    node_last_time = 0
 
     start_time = node.get_clock().now()
     node.current_nav_goal_handle = None
@@ -93,16 +100,18 @@ def navigate(node, x, y, qz, qw, desc, timeout_sec=None, speed_profile=1,
                     return False
 
             now_s = time.monotonic()
-            if now_s - last_progress_time >= 0.2:
+            if now_s - last_progress_time >= 0.1:
                 pose = node.get_current_map_pose(timeout_sec=0.0, log_error=False)
                 if pose is None:
                     node.task_progress.update('Nav2 导航中；暂时无法读取 map 位姿')
                 else:
                     px, py, yaw = pose
                     distance = math.hypot(float(x) - px, float(y) - py)
+                    interrupt = is_interrupt(node, distance)
+                    node_px, node_py, node_sign, node_last_time = recovery_action(node, node_px, node_py, node_yaw, node_sign, node_last_time)
                     yaw_error = abs(motion.normalize_angle(yaw_from_qz_qw(node, qz, qw) - yaw))
                     node.task_progress.update(
-                        f'距目标 {distance:.3f}m | 朝向误差 {math.degrees(yaw_error):.1f}°')
+                        f'距目标 {distance:.3f}m | 朝向误差 {math.degrees(yaw_error):.1f}° | 是否打断 {interrupt}')
                 last_progress_time = now_s
             time.sleep(0.01)
 
@@ -127,6 +136,40 @@ def navigate(node, x, y, qz, qw, desc, timeout_sec=None, speed_profile=1,
         node.task_progress.end_stage(stage_result)
 
 
+def is_interrupt(node, distance):
+    if(distance <= 0.15):
+        msg = Int8()
+        msg.data = 1
+        node.is_interrupt_pub.publish(msg)
+        return msg.data
+    else:
+        msg = Int8()
+        msg.data = 0
+        node.is_interrupt_pub.publish(msg)
+        return msg.data
+    
+def recovery_action(node,node_px,node_py,node_yaw,node_sign,node_last_time):
+    now = time.monotonic()
+    pose = node.get_current_map_pose(timeout_sec=0.0, log_error=False)
+    x,y,yaw = pose
+    if(node_sign == 1):
+        node_px, node_py, node_yaw = pose
+        node_last_time = time.monotonic()
+        node_sign = 0
+        return node_px, node_py, node_sign, node_last_time
+    if(now - node_last_time < 10):
+        dis = math.hypot(float(x) - node_px, float(y) - node_py)
+        if(dis > 0.1):
+            node_sign = 1
+            return node_px, node_py, node_sign, node_last_time
+        return node_px, node_py, node_sign, node_last_time
+    if(now - node_last_time >= 10):
+        msg = Int8()
+        msg.data = 1
+        node.recovery_publish.publish(msg)
+        node_sign = 1
+        return node_px, node_py, node_sign, node_last_time
+    
 def begin_parameters(node, mode):
     mode = profile_key(node, mode)
     if mode not in node.mode_configs:
