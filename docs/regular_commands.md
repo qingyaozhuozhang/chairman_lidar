@@ -118,3 +118,60 @@ python3 tool/downsample_map.py base.pcd final.pcd \
 
 保存点云地图
 ros2 service call /map_save std_srvs/srv/Trigger
+
+### 二.独立建图与点位地图
+
+在工程根目录构建并加载环境后运行：
+
+```bash
+# 雷达 + FAST-LIO 建图；Ctrl+C 后保存 scans.pcd 并降采样生成 final.pcd
+ros2 run configuration main_map
+# 不打开建图 RViz
+ros2 run configuration main_map --no-rviz
+# 只检查命令与路径，不启动设备
+ros2 run configuration main_map --dry-run
+```
+
+原始地图保存在 `src/fishbot/fast_lio/PCD/scans.pcd`，降采样结果保存在 `src/fishbot/fishbot_navigation2/PCD/final.pcd`。体素边长默认 0.05 m，可通过 `--global-leaf-size 0.05` 指定。降采样依赖 NumPy、Open3D，请使用已安装这些依赖的 Python 环境；按 Ctrl+C 后等待保存和降采样完成提示，再关闭终端。
+
+```bash
+# 更新安装目录中的导航地图
+colcon build --packages-select fishbot_navigation2
+source install/setup.bash
+# 导航使用 Point-LIO
+ros2 run configuration main_boot
+# 根据当前源码点位生成彩色标注地图；无需启动导航
+ros2 run tool show_points
+# 指定另一张底图
+ros2 run tool show_points --map src/fishbot/fishbot_navigation2/maps/room_zhengzhi.yaml
+```
+
+标注图片为 `src/function/config/on_demand/points_map/points_map.png`，同目录生成地图描述 `points_map.yaml`，再次运行覆盖生成结果。红蓝点位采用 `src/function/config/on_demand/points.yaml`；底图默认 `silou_edited.yaml`。原始地图保持不变，标注图仅供查看。
+
+
+### 测试链路问题
+1.检查Map Server
+- `ros2 lifecycle get /map_server`
+- 输出额结果
+
+  - | 输出             | 含义                       |
+    | ---------------- | -------------------------- |
+    | active [3]       | （正常）地图服务器已经激活 |
+    | inactive [2]     | （异常）已配置，但没有激活 |
+    | unconfigured [1] | （异常）尚未完成配置       |
+
+2.检查Planner Server
+
+- `ros2 lifecycle get /planner_server`
+
+3.检查Controller Server
+
+- `ros2 lifecycle get /controller_server`
+
+4.确认静态地图有没有发布
+
+- `ros2 topic echo /map --once --qos-durability transient_local --field info`
+
+5.检查GICP和Fast_lio的TF
+
+- `ros2 run tf2_ros tf2_echo map base_footprint`

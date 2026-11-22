@@ -52,6 +52,7 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pcd_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_pose_sub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr cropped_cloud_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr filtered_cloud_pub_;
 
   int num_threads_;
   int num_neighbors_;
@@ -89,7 +90,7 @@ private:
 
   double map_consistency_dist_{0.0};
   double map_consistency_min_ratio_{0.2};
-  
+
   std::shared_ptr<small_gicp::KdTree<pcl::PointCloud<pcl::PointCovariance>>> target_tree_;
   std::shared_ptr<
     small_gicp::Registration<small_gicp::GICPFactor, small_gicp::ParallelReductionOMP>>

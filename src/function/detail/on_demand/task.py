@@ -161,14 +161,8 @@ class TaskContext:
 
     def go_to_pose(self, x, y, qz, qw, mode=1, name='自定义目标'):
         def navigate(selected):
-            if self.node.mode_configs[selected].get('pre_align', {}).get('enabled', False):
-                return navigation.navigate_pre_align(self.node, x, y, qz, qw, name, speed_profile=selected)
             return navigation.navigate(self.node, x, y, qz, qw, name, speed_profile=selected)
         return self.navigation(mode, navigate)
-
-    def align_region(self, mode=1):
-        from chairman_tasks.special.align_region.task import navigate
-        return self.navigation(mode, lambda selected: navigate(self.node, speed_profile=selected))
 
     def navigate_offset(self, offset, mode=1):
         from chairman_tasks.special.kfs_navigation.task import navigate

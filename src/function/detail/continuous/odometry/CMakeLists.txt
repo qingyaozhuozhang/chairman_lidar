@@ -16,9 +16,6 @@ find_package(tf2_ros REQUIRED)
 find_package(tf2_sensor_msgs REQUIRED)
 find_package(custom_msg REQUIRED)
 
-find_package(yaml-cpp REQUIRED)
-find_package(ament_index_cpp REQUIRED)
-
 add_executable(odometry_transform_math src/odometry_transform_math.cpp)
 add_executable(trans src/trans.cpp)
 
@@ -30,10 +27,7 @@ ament_target_dependencies(odometry_transform_math
   tf2_geometry_msgs
   tf2_ros
   custom_msg
-  ament_index_cpp
 )
-target_link_libraries(odometry_transform_math yaml-cpp)
-
 ament_target_dependencies(trans
   rclcpp
   sensor_msgs
@@ -47,6 +41,9 @@ install(TARGETS
   trans
   DESTINATION lib/${PROJECT_NAME}
 )
+
+install(CODE "file(REMOVE \"\${CMAKE_INSTALL_PREFIX}/share/${PROJECT_NAME}/config/regions.yaml\")")
+install(CODE "file(REMOVE \"\${CMAKE_INSTALL_PREFIX}/lib/${PROJECT_NAME}/points_visualizer\")")
 
 install(DIRECTORY
   launch

@@ -27,9 +27,6 @@ def generate_launch_description():
     current_params.update(PRESET_MAPS[SELECTED_MAP])
     current_params.update(PRESET_LIDARS[SELECTED_LIDAR])
 
-    # 向节点传递场地编号，用于选择区域配置。
-    current_params['selected_pose'] = SELECTED_LIDAR
-
     odometry_transform_math_node = Node(
         package='odometry',
         executable='odometry_transform_math', 

@@ -22,6 +22,8 @@ def agent_command(config, root=None):
         raise ValueError('port 必须是 1～65535 的整数')
     agent = ['ros2', 'run', 'micro_ros_agent', 'micro_ros_agent', 'udp4',
              '--port', str(port)]
+    # agent = ['ros2', 'run', 'micro_ros_agent', 'micro_ros_agent', 'serial','--dev',
+    #          '/dev/ttyUSB0', '-b 921600']
     workspace = str(config.get('workspace', '')).strip()
     if not workspace:
         return agent

@@ -1,5 +1,4 @@
 #include "rclcpp/rclcpp.hpp"
-#include "rclcpp/parameter_client.hpp"
 
 #include "nav_msgs/msg/odometry.hpp"
 #include "custom_msg/msg/pose_euler.hpp"
@@ -11,23 +10,10 @@
 #include "tf2_ros/buffer.h"
 #include "tf2_ros/transform_listener.h"
 
-#include <yaml-cpp/yaml.h>
-#include <ament_index_cpp/get_package_share_directory.hpp>
 
 #include <cmath>
-#include <vector>
 #include <string>
 #include <functional>
-
-
-struct Region {
-    int id;
-    std::string name;
-    float x_min;
-    float x_max;
-    float y_min;
-    float y_max;
-};
 
 
 class OdometryTransformMath : public rclcpp::Node
@@ -35,9 +21,7 @@ class OdometryTransformMath : public rclcpp::Node
 public:
     OdometryTransformMath() : Node("odometry_transform_math")
     {
-        this->declare_parameter("selected_pose", 1);
 
-        this->declare_parameter("default_inflation_radius", 0.5);
 
         // 所选启动点用于位置核对；可选的 /initialpose 发布默认关闭。
         this->declare_parameter("lidar_init_x", -5.106);
@@ -53,10 +37,6 @@ public:
         // GICP 从启动参数初始化；默认不再由 odometry 重复发送定位指令。
         this->declare_parameter("initialpose_publish_after_stable_count", 0);
 
-        selected_pose_ = static_cast<int>(this->get_parameter("selected_pose").as_int());
-
-        default_inflation_radius_ =
-            this->get_parameter("default_inflation_radius").as_double();
 
         lidar_init_x_ =
             static_cast<float>(this->get_parameter("lidar_init_x").as_double());
@@ -92,65 +72,8 @@ public:
             initialpose_publish_after_stable_count_ = 0;
         }
 
-        // 加载 YAML 区域配置
-        try {
-            std::string pkg_share =
-                ament_index_cpp::get_package_share_directory("odometry");
-
-            std::string yaml_path = pkg_share + "/config/regions.yaml";
-
-            YAML::Node config = YAML::LoadFile(yaml_path);
-
-            std::string region_key =
-                (selected_pose_ == 1 || selected_pose_ == 2) ? "regions_red" : "regions_blue";
-
-            if (config[region_key]) {
-                for (const auto& node : config[region_key]) {
-                    Region r;
-                    r.id = node["id"].as<int>();
-                    r.name = node["name"].as<std::string>();
-                    r.x_min = node["x_min"].as<float>();
-                    r.x_max = node["x_max"].as<float>();
-                    r.y_min = node["y_min"].as<float>();
-                    r.y_max = node["y_max"].as<float>();
-                    regions_.push_back(r);
-                }
-
-                RCLCPP_INFO(
-                    this->get_logger(),
-                    "成功加载了 %zu 个检测区域 (当前使用方案: %s)",
-                    regions_.size(),
-                    region_key.c_str()
-                );
-            } else {
-                RCLCPP_WARN(
-                    this->get_logger(),
-                    "在 regions.yaml 中找不到 '%s' 键！请检查文件格式。",
-                    region_key.c_str()
-                );
-            }
-        } catch (const std::exception& e) {
-            RCLCPP_ERROR(
-                this->get_logger(),
-                "无法加载 regions.yaml! 报错: %s",
-                e.what()
-            );
-        }
-
         tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
         tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
-
-        local_costmap_param_client_ =
-            std::make_shared<rclcpp::AsyncParametersClient>(
-                this,
-                "/local_costmap/local_costmap"
-            );
-
-        global_costmap_param_client_ =
-            std::make_shared<rclcpp::AsyncParametersClient>(
-                this,
-                "/global_costmap/global_costmap"
-            );
 
         odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
             "odom_raw",
@@ -400,38 +323,7 @@ private:
         return true;
     }
 
-    void set_inflation_radius(double radius)
-    {
-        RCLCPP_WARN(
-            this->get_logger(),
-            "🚧 调整代价地图膨胀半径为: %.2f m",
-            radius
-        );
-
-        if (local_costmap_param_client_->service_is_ready()) {
-            local_costmap_param_client_->set_parameters({
-                rclcpp::Parameter("inflation_layer.inflation_radius", radius)
-            });
-        } else {
-            RCLCPP_WARN(
-                this->get_logger(),
-                "local_costmap 参数服务未就绪，动态调整失效！"
-            );
-        }
-
-        if (global_costmap_param_client_->service_is_ready()) {
-            global_costmap_param_client_->set_parameters({
-                rclcpp::Parameter("inflation_layer.inflation_radius", radius)
-            });
-        } else {
-            RCLCPP_WARN(
-                this->get_logger(),
-                "global_costmap 参数服务未就绪，动态调整失效！"
-            );
-        }
-    }
-
-    void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
+    void odom_callback(const nav_msgs::msg::Odometry::SharedPtr)
     {
         // 读取 TF 获得 map 坐标系下的位姿
         float map_x = 0.0f;
@@ -466,51 +358,6 @@ private:
             }
         }
 
-        // 使用真实 map 坐标判断区域
-        int current_region_id = -1;
-        std::string current_region_name = "未知区域";
-
-        for (const auto& r : regions_) {
-            if (map_x >= r.x_min && map_x <= r.x_max &&
-                map_y >= r.y_min && map_y <= r.y_max) {
-                current_region_id = r.id;
-                current_region_name = r.name;
-                break;
-            }
-        }
-
-        // 基于 ID 的跨区域状态检测与参数推送
-        bool current_in_merlin = false;
-
-        if (current_region_id >= 1 && current_region_id <= 13) {
-            current_in_merlin = true;
-        }
-
-        if (current_in_merlin != last_in_merlin_) {
-            if (current_in_merlin) {
-                RCLCPP_INFO(
-                    this->get_logger(),
-                    "🌟 小车进入梅林区域 [ID: %d, %s]，设置膨胀半径为 0.0",
-                    current_region_id,
-                    current_region_name.c_str()
-                );
-
-                set_inflation_radius(0.0);
-            } else {
-                RCLCPP_INFO(
-                    this->get_logger(),
-                    "🌟 小车离开梅林区域，当前进入 [ID: %d, %s]，恢复膨胀半径为 %.2f",
-                    current_region_id,
-                    current_region_name.c_str(),
-                    default_inflation_radius_
-                );
-
-                set_inflation_radius(default_inflation_radius_);
-            }
-
-            last_in_merlin_ = current_in_merlin;
-        }
-
         // 发布 /odom_map（使用真实 map 坐标）
         custom_msg::msg::PoseEuler pure_pose;
         pure_pose.x = map_x;
@@ -524,19 +371,16 @@ private:
             this->get_logger(),
             *this->get_clock(),
             300,
-            "X: %.3f m, Y: %.3f m, Z: %.3f m, Yaw: %.3f rad | ID: %d (%s)",
+            "X: %.3f m, Y: %.3f m, Z: %.3f m, Yaw: %.3f rad",
             pure_pose.x,
             pure_pose.y,
             pure_pose.z,
-            pure_pose.yaw,
-            current_region_id,
-            current_region_name.c_str()
+            pure_pose.yaw
         );
     }
 
 private:
     // 基础参数
-    int selected_pose_ = 1;
 
     float lidar_init_x_ = 0.0f;
     float lidar_init_y_ = 0.0f;
@@ -544,7 +388,6 @@ private:
     float lidar_init_qz_ = 0.0f;
     float lidar_init_qw_ = 1.0f;
 
-    std::vector<Region> regions_;
 
     // ROS 通信
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
@@ -573,12 +416,7 @@ private:
     int initialpose_publish_count_ = 0;
     int initialpose_publish_after_stable_count_ = 0;
 
-    // 动态参数客户端
-    rclcpp::AsyncParametersClient::SharedPtr local_costmap_param_client_;
-    rclcpp::AsyncParametersClient::SharedPtr global_costmap_param_client_;
 
-    bool last_in_merlin_ = false;
-    double default_inflation_radius_ = 0.5;
 };
 
 

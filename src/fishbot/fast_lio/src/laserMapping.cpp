@@ -62,6 +62,7 @@
 #include <livox_ros_driver2/msg/custom_msg.hpp>
 #include "preprocess.h"
 #include <ikd-Tree/ikd_Tree.h>
+#include "map_storage.hpp"
 
 #define INIT_TIME           (0.1)
 #define LASER_POINT_COV     (0.001)
@@ -84,8 +85,9 @@ double time_diff_lidar_to_imu = 0.0;
 mutex mtx_buffer;
 condition_variable sig_buffer;
 
-string root_dir = "/home/hurricane/RC27/3/chairman_lidar/src/fishbot/fast_lio/";
+string root_dir;
 string map_file_path, lid_topic, imu_topic;
+bool pcd_save_failed = false;
 
 double res_mean_last = 0.05, total_residual = 0.0;
 double last_timestamp_lidar = 0, last_timestamp_imu = -1.0;
@@ -95,7 +97,7 @@ double cube_len = 0, HALF_FOV_COS = 0, FOV_DEG = 0, total_distance = 0, lidar_en
 int    effct_feat_num = 0, time_log_counter = 0, scan_count = 0, publish_count = 0;
 int    iterCount = 0, feats_down_size = 0, NUM_MAX_ITERATIONS = 0, laserCloudValidNum = 0, pcd_save_interval = -1, pcd_index = 0;
 bool   point_selected_surf[100000] = {0};
-bool   lidar_pushed, flg_first_scan = true, flg_exit = false, flg_EKF_inited;
+bool   lidar_pushed, flg_first_scan = true, flg_EKF_inited;
 bool   scan_pub_en = false, dense_pub_en = false, scan_body_pub_en = false;
 bool    is_first_lidar = true;
 
@@ -142,14 +144,6 @@ geometry_msgs::msg::PoseStamped msg_body_pose;
 
 shared_ptr<Preprocess> p_pre(new Preprocess());
 shared_ptr<ImuProcess> p_imu(new ImuProcess());
-
-void SigHandle(int sig)
-{
-    flg_exit = true;
-    std::cout << "catch sig %d" << sig << std::endl;
-    sig_buffer.notify_all();
-    rclcpp::shutdown();
-}
 
 inline void dump_lio_state_to_log(FILE *fp)  
 {
@@ -532,12 +526,17 @@ void publish_frame_world(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::Share
         if (pcl_wait_save->size() > 0 && pcd_save_interval > 0  && scan_wait_num >= pcd_save_interval)
         {
             pcd_index ++;
-            string all_points_dir("/home/hurricane/RC27/3/chairman_lidar/src/fishbot/fast_lio/PCD/scans_" + to_string(pcd_index) + string(".pcd"));
-            pcl::PCDWriter pcd_writer;
-            cout << "current scan saved to /PCD/" << all_points_dir << endl;
-            pcd_writer.writeBinary(all_points_dir, *pcl_wait_save);
-            pcl_wait_save->clear();
-            scan_wait_num = 0;
+            const auto output = std::filesystem::path(root_dir) / "PCD" /
+                ("scans_" + to_string(pcd_index) + ".pcd");
+            try {
+                fast_lio_storage::save_atomic(output, *pcl_wait_save);
+                cout << "Current scan saved to " << output << endl;
+                pcl_wait_save->clear();
+                scan_wait_num = 0;
+            } catch (const std::exception &error) {
+                pcd_save_failed = true;
+                RCLCPP_ERROR(rclcpp::get_logger("laser_mapping"), "Map save failed: %s", error.what());
+            }
         }
     }
     
@@ -608,8 +607,7 @@ void publish_map(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub
 
 void save_to_pcd()
 {
-    pcl::PCDWriter pcd_writer;
-    pcd_writer.writeBinary(map_file_path, *pcl_wait_pub);
+    fast_lio_storage::save_atomic(map_file_path, *pcl_wait_pub);
 }
 
 template<typename T>
@@ -806,6 +804,7 @@ public:
         this->declare_parameter<bool>("publish.scan_bodyframe_pub_en", true);
         this->declare_parameter<int>("max_iteration", 4);
         this->declare_parameter<string>("map_file_path", "");
+        this->declare_parameter<string>("workspace_root", "");
         this->declare_parameter<string>("common.lid_topic", "/livox/lidar");
         this->declare_parameter<string>("common.imu_topic", "/livox/imu");
         this->declare_parameter<bool>("common.time_sync_en", false);
@@ -880,6 +879,17 @@ public:
         this->get_parameter_or<vector<double>>("mapping.extrinsic_T", extrinT, vector<double>());
         this->get_parameter_or<vector<double>>("mapping.extrinsic_R", extrinR, vector<double>());
 
+        root_dir = fast_lio_storage::package_root(this->get_parameter("workspace_root").as_string()).string();
+        if (map_file_path.empty()) map_file_path = "PCD/scans.pcd";
+        if (std::filesystem::path(map_file_path).is_relative()) {
+            map_file_path = (std::filesystem::path(root_dir) / map_file_path).string();
+        }
+        std::filesystem::create_directories(std::filesystem::path(root_dir) / "Log");
+        if (pcd_save_en) {
+            std::filesystem::create_directories(std::filesystem::path(root_dir) / "PCD");
+            RCLCPP_INFO(this->get_logger(), "Shutdown map: %s/PCD/scans.pcd", root_dir.c_str());
+        }
+
         RCLCPP_INFO(this->get_logger(), "p_pre->lidar_type %d", p_pre->lidar_type);
 
         path.header.stamp = this->get_clock()->now();
@@ -918,15 +928,16 @@ public:
         // FILE *fp;
         string pos_log_dir = root_dir + "/Log/pos_log.txt";
         fp = fopen(pos_log_dir.c_str(),"w");
+        if (!fp) throw std::runtime_error("Cannot open log file: " + pos_log_dir);
 
         // ofstream fout_pre, fout_out, fout_dbg;
         fout_pre.open(DEBUG_FILE_DIR("mat_pre.txt"),ios::out);
         fout_out.open(DEBUG_FILE_DIR("mat_out.txt"),ios::out);
         fout_dbg.open(DEBUG_FILE_DIR("dbg.txt"),ios::out);
         if (fout_pre && fout_out)
-            cout << "~~~~"<<ROOT_DIR<<" file opened" << endl;
+            cout << "~~~~"<<root_dir<<" file opened" << endl;
         else
-            cout << "~~~~"<<ROOT_DIR<<" doesn't exist" << endl;
+            cout << "~~~~"<<root_dir<<" doesn't exist" << endl;
 
         /*** ROS subscribe initialization ***/
         if (p_pre->lidar_type == AVIA)
@@ -1128,9 +1139,15 @@ private:
         RCLCPP_INFO(this->get_logger(), "Saving map to %s...", map_file_path.c_str());
         if (pcd_save_en)
         {
-            save_to_pcd();
-            res->success = true;
-            res->message = "Map saved.";
+            try {
+                save_to_pcd();
+                res->success = true;
+                res->message = "Map saved.";
+            } catch (const std::exception &error) {
+                res->success = false;
+                res->message = error.what();
+                RCLCPP_ERROR(this->get_logger(), "Map save failed: %s", error.what());
+            }
         }
         else
         {
@@ -1169,22 +1186,30 @@ int main(int argc, char** argv)
 {
     rclcpp::init(argc, argv);
 
-    signal(SIGINT, SigHandle);
-
-    rclcpp::spin(std::make_shared<LaserMappingNode>());
+    // rclcpp handles SIGINT/SIGTERM and returns from spin before disk I/O begins.
+    try {
+        rclcpp::spin(std::make_shared<LaserMappingNode>());
+    } catch (const std::exception &error) {
+        std::cerr << "FAST-LIO failed: " << error.what() << std::endl;
+        if (rclcpp::ok()) rclcpp::shutdown();
+        return 1;
+    }
 
     if (rclcpp::ok())
         rclcpp::shutdown();
     /**************** save map ****************/
     /* 1. make sure you have enough memories
     /* 2. pcd save will largely influence the real-time performences **/
-    if (pcl_wait_save->size() > 0 && pcd_save_en)
+    if (pcd_save_en)
     {
-        string file_name = string("scans.pcd");
-        string all_points_dir("/home/hurricane/RC27/3/chairman_lidar/src/fishbot/fast_lio/PCD/scans_" + file_name);
-        pcl::PCDWriter pcd_writer;
-        cout << "current scan saved to /PCD/" << file_name<<endl;
-        pcd_writer.writeBinary(all_points_dir, *pcl_wait_save);
+        const auto output = std::filesystem::path(root_dir) / "PCD/scans.pcd";
+        try {
+            fast_lio_storage::save_atomic(output, *pcl_wait_save);
+            cout << "Map saved to " << output << " (" << pcl_wait_save->size() << " points)" << endl;
+        } catch (const std::exception &error) {
+            std::cerr << "Map save failed: " << error.what() << std::endl;
+            pcd_save_failed = true;
+        }
     }
 
     if (runtime_pos_log)
@@ -1193,6 +1218,10 @@ int main(int argc, char** argv)
         FILE *fp2;
         string log_dir = root_dir + "/Log/fast_lio_time_log.csv";
         fp2 = fopen(log_dir.c_str(),"w");
+        if (!fp2) {
+            std::cerr << "Cannot open log file: " << log_dir << std::endl;
+            return 1;
+        }
         fprintf(fp2,"time_stamp, total time, scan point size, incremental time, search time, delete size, delete time, tree size st, tree size end, add point size, preprocess time\n");
         for (int i = 0;i<time_log_counter; i++){
             fprintf(fp2,"%0.8f,%0.8f,%d,%0.8f,%0.8f,%d,%0.8f,%d,%d,%d,%0.8f\n",T1[i],s_plot[i],int(s_plot2[i]),s_plot3[i],s_plot4[i],int(s_plot5[i]),s_plot6[i],int(s_plot7[i]),int(s_plot8[i]), int(s_plot10[i]), s_plot11[i]);
@@ -1205,5 +1234,5 @@ int main(int argc, char** argv)
         fclose(fp2);
     }
 
-    return 0;
+    return pcd_save_failed ? 1 : 0;
 }

@@ -56,12 +56,6 @@ functions:
   description: 等待抬升高度变化
   module: special.lift_wait.task
   parameters: {}
-- id: 15
-  name: align_region
-  description: 对准当前梅林区域中心
-  module: special.align_region.task
-  parameters: {}
-  uses_point: true
 - id: 16
   name: kfs_navigation
   uses_offset: true

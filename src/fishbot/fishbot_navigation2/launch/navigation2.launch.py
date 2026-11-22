@@ -17,8 +17,8 @@ def generate_launch_description():
     gicp_dir = get_package_share_directory('small_gicp_relocalization')
 
     rviz_config_dir = os.path.join(fishbot_navigation2_dir, 'config', 'rviz', 'nav2_default_view.rviz')
-    map_yaml_path = os.path.join(fishbot_navigation2_dir, 'maps', 'room.yaml')
-    pcd_file_path = os.path.join(fishbot_navigation2_dir, 'PCD', 'final2.pcd')
+    map_yaml_path = LaunchConfiguration('map')
+    pcd_file_path = LaunchConfiguration('pcd_map')
     nav2_param_path = os.path.join(fishbot_navigation2_dir, 'config', 'nav2_params.yaml')
     urdf_path = os.path.join(fishbot_navigation2_dir, 'urdf', 'my_robot', 'my_robot.xacro')
 
@@ -31,6 +31,10 @@ def generate_launch_description():
 
     return launch.LaunchDescription([
         DeclareLaunchArgument('use_sim_time', default_value=use_sim_time),
+        DeclareLaunchArgument('map', default_value=os.path.join(
+            fishbot_navigation2_dir, 'maps', 'silou_edited.yaml')),
+        DeclareLaunchArgument('pcd_map', default_value=os.path.join(
+            fishbot_navigation2_dir, 'PCD', 'final.pcd')),
 
         # 0. 启动真实 Livox 雷达驱动
         IncludeLaunchDescription(
@@ -51,10 +55,18 @@ def generate_launch_description():
             parameters=[{'use_sim_time': use_sim_time}],
         ),
 
-        # 1. 启动 Fast-LIO，发布 /cloud_registered_body 等点云
+        # 1. Fast-LIO 提供局部里程计与点云
+        # Livox 驱动已在导航 launch 中启动，避免重复启动。
         IncludeLaunchDescription(
-            PythonLaunchDescriptionSource([fast_lio_dir, '/launch', '/start.launch.py']),
-            launch_arguments={'rviz': 'false', 'use_sim_time': use_sim_time}.items(),
+            PythonLaunchDescriptionSource(
+                [fast_lio_dir, '/launch', '/start.launch.py']
+            ),
+            launch_arguments={
+                'rviz': 'false',
+                'use_sim_time': use_sim_time,
+                'start_livox_driver': 'false',
+                'config_file': 'mid360.yaml',
+            }.items(),
         ),
 
         # 2. TF 坐标系桥接

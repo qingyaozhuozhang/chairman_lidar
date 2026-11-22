@@ -38,6 +38,8 @@ class CommunicationNode(Node):
             self, NavigateToPose, 'navigate_to_pose', callback_group=self.reentrant_group))
         self.parameter_transaction = ParameterTransaction(RosParameterBackend(self))
         self.data_pub = self.create_publisher(SpeedHeading, '/nav_speed_heading_data', 10)
+        self.is_interrupt_pub = self.create_publisher(Int8, '/is_interrupt', 10)
+        self.recovery_publish = self.create_publisher(Int8, '/is_recovery', 10)
         for message, topic, callback in (
             (Odometry, '/Odometry', self.odom_callback),
             (PoseEuler, '/odom_map', self.odom_map_callback),

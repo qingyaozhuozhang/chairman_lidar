@@ -28,7 +28,7 @@ def test_new_speed_mode_and_point_discovered_without_python_edits(config):
     modes = catalog.load_modes(config)
     red, blue = catalog.load_points(modes, config)
     assert red[33] == [1.0, 2.0, 0.0, 1.0, 'new point', 4]
-    assert len(blue) == 33
+    assert len(blue) == len(points['blue'])
 
 
 def test_standalone_mode_does_not_require_modes_one_two_or_three(config):
@@ -41,25 +41,19 @@ def test_standalone_mode_does_not_require_modes_one_two_or_three(config):
     assert set(catalog.load_modes(config)) == {8}
 
 
-@pytest.mark.parametrize('change', ['empty', 'missing_phase_field', 'invalid_distance',
-                                  'invalid_period', 'invalid_align', 'combined_flows'])
+@pytest.mark.parametrize('change', ['empty', 'extra_field', 'invalid_id', 'invalid_value'])
 def test_independent_mode_rejects_incomplete_or_invalid_settings(config, change):
     directory = config / 'on_demand/modes'
     mode = catalog.read_yaml(directory / 'speed_2.yaml')
     mode.update(id=4, name='invalid')
     if change == 'empty':
         mode['parameters'] = {}
-    elif change == 'missing_phase_field':
-        del mode['sprint_parameters']['velocity_smoother']['ros__parameters']['max_velocity']
-    elif change == 'invalid_distance':
-        mode['switch_distance'] = float('nan')
-    elif change == 'invalid_period':
-        mode['switch_check_period'] = 0.0
-    elif change == 'invalid_align':
-        mode.pop('sprint_parameters')
-        mode['pre_align'] = {'enabled': True, 'distance': -0.5}
+    elif change == 'extra_field':
+        mode['unknown_algorithm'] = {}
+    elif change == 'invalid_id':
+        mode['id'] = 0
     else:
-        mode['pre_align'] = {'enabled': True}
+        mode['parameters']['controller_server']['ros__parameters']['FollowPath']['translation_kpx'] = float('nan')
     (directory / 'speed_4.yaml').write_text(yaml.safe_dump(mode))
     with pytest.raises(ValueError):
         catalog.load_modes(config)
@@ -122,17 +116,14 @@ def test_field_is_read_without_prompt_and_matches_odometry_default(monkeypatch):
         catalog.read_selected_pose()
 
 
-def test_all_mode_parameters_refer_to_existing_nav2_baseline_names():
-    nav2_path = ROOT.parent / 'fishbot/fishbot_navigation2/config/nav2_params.yaml'
-    nav2 = yaml.safe_load(nav2_path.read_text())
-    modes = catalog.load_modes(ROOT / 'config')
-    for mode in modes.values():
-        for section in ('parameters', 'sprint_parameters'):
-            parameters = catalog.flatten_parameters(mode.get(section, {}))
-            for node, values in parameters.items():
-                baseline = catalog.flatten_parameters({node: nav2[node]})[node]
-                assert values.keys() <= baseline.keys()
-                assert all(type(value) is type(baseline[name]) for name, value in values.items())
+def test_mode_controller_fields_are_declared_by_active_plugin():
+    import re
+    source = (ROOT.parent / 'fishbot/pb_omni_pid_pursuit_controller/src/omni_pid_pursuit_controller.cpp').read_text()
+    declared = set(re.findall(r'plugin_name_ \+ "\.([^"\n]+)"', source))
+    for mode in catalog.load_modes(ROOT / 'config').values():
+        controller = catalog.flatten_parameters(mode['parameters'])['controller_server']
+        fields = {key.removeprefix('FollowPath.') for key in controller if key.startswith('FollowPath.')}
+        assert fields - {'plugin'} <= declared
 
 
 def test_native_parameter_paths_reject_collisions():
@@ -144,14 +135,14 @@ def test_native_parameter_paths_reject_collisions():
 def test_mode_directory_contains_complete_named_blocks_and_special_is_not_a_speed(config):
     directory = config / 'on_demand/modes'
     assert {p.name for p in directory.glob('*.yaml')} == {
-        'speed_1.yaml', 'speed_2.yaml', 'speed_3.yaml', 'special.yaml'}
-    baseline = yaml.safe_load((ROOT.parent / 'fishbot/fishbot_navigation2/config/nav2_params.yaml').read_text())
+        'speed_1.yaml', 'speed_2.yaml', 'special.yaml'}
     modes = catalog.load_modes(config)
-    assert set(modes) == {1, 2, 3}
+    assert set(modes) == {1, 2}
     for mode in modes.values():
-        for section in ('parameters', 'sprint_parameters'):
-            for node, params in catalog.flatten_parameters(mode.get(section, {})).items():
-                assert params.keys() == catalog.flatten_parameters({node: baseline[node]})[node].keys()
+        assert set(mode) == {'id', 'name', 'parameters'}
+        assert set(mode['parameters']) == {'controller_server', 'velocity_smoother'}
+        for block in mode['parameters'].values():
+            assert 'ros__parameters' in block
     assert not (config / 'on_demand/special.yaml').exists()
 
 

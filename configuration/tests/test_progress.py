@@ -23,8 +23,8 @@ def reporter(tty=False):
     logger = SimpleNamespace(info=messages.append, warn=messages.append, error=messages.append)
     now = [0.0]
     state = progress.TaskProgress(logger, stream, lambda: now[0])
-    state.begin('编号 0：原点（模式 3）')
-    state.stage('模式3 1/2 提前转正')
+    state.begin('编号 0：原点（模式 1）')
+    state.stage('模式1 直接导航')
     return state, stream, messages, now
 
 
@@ -85,7 +85,7 @@ def test_terminal_state_distinguishes_cancel_failure_and_failed_cleanup(success,
         state.fail('ABORTED：Nav2 执行失败（状态码 6）')
     result = state.finish(success, cancelled, cleanup)
     assert result.startswith(f'[{state_label}]')
-    assert '编号 0：原点' in result and '结束位置：模式3 1/2' in result
+    assert '编号 0：原点' in result and '结束位置：模式1 直接导航' in result
     assert messages[-1] == result
     if cleanup:
         assert '尚未确认' in result

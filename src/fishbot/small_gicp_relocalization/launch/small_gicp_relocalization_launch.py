@@ -61,13 +61,13 @@ def generate_launch_description():
             DeclareLaunchArgument("use_sim_time", default_value="false"),
             DeclareLaunchArgument(
                 "prior_pcd_file",
-                default_value="src/fishbot/fishbot_navigation2/PCD/final2.pcd",
+                default_value="src/fishbot/fishbot_navigation2/PCD/final.pcd",
                 description="已有 PCD 地图的路径；总导航启动时自动传入",
             ),
             # ========== 新增：声明过滤参数 ==========
             DeclareLaunchArgument(
                 "map_consistency_dist",
-                default_value="0.20",
+                default_value="0.30",
                 description="地图一致性过滤的最近邻距离阈值，0 表示关闭",
             ),
             DeclareLaunchArgument(

@@ -16,13 +16,12 @@ src/function/
 │   ├── on_demand/                        # Python 包 chairman_tasks
 │   │   ├── task.py                       # TaskServer、dispatch、TaskContext
 │   │   ├── config.py                     # 配置加载、名称展开与有效性校验
-│   │   ├── fixed_point/task.py           # 三种速度模式导航流程及参数应用
+│   │   ├── fixed_point/task.py           # 统一定点导航流程及参数应用
 │   │   └── special/
 │   │       ├── motion.py                 # 角度、坐标转换和速度限制计算
 │   │       ├── move_forward/task.py      # 沿自身坐标系往前直走控制
 │   │       ├── turn_left/task.py         # 原地左转控制
 │   │       ├── stair_forward/task.py     # 登阶周期控制与停止信号处理
-│   │       ├── align_region/task.py      # 当前区域中心目标计算
 │   │       ├── uphill/task.py            # 沿地图 X 方向上坡
 │   │       └── <功能名>/task.py          # 功能入口 run(ctx, request)
 │   └── continuous/                       # 独立运行的持续功能
@@ -36,9 +35,8 @@ src/function/
     ├── points.yaml                       # 点位编号、地图位姿与模式
     ├── functions.yaml                    # 特殊功能登记与任务参数
     └── modes/
-        ├── speed_1.yaml                  # 基础导航
-        ├── speed_2.yaml                  # 冲刺与精调
-        ├── speed_3.yaml                  # 提前对齐
+        ├── speed_1.yaml                  # 快速档
+        ├── speed_2.yaml                  # 慢速档
         └── special.yaml                  # 特殊运动与检测参数
 ```
 
@@ -67,7 +65,7 @@ source install/setup.bash
 ros2 run configuration main_boot
 ```
 
-总启动选择场地后，将 `SELECTED_POSE` 传给功能、导航及 odometry 进程：1/2 使用红方点位与区域，3/4 使用蓝方。Function sum 不再单独选择场地。
+总启动选择场地后，将 `SELECTED_POSE` 传给功能、导航及 odometry 进程：1/2 使用红方点位，3/4 使用蓝方。Function sum 不再单独选择场地。
 
 需要在另一个终端独立运行菜单时，先避免总启动重复创建功能进程，再沿用同一场地编号：
 
@@ -103,8 +101,8 @@ SELECTED_POSE=4 ros2 run framework sum
 ```text
 chairman_lidar 功能菜单
 定点导航：
-    0: 原点（模式 3：speed_3）
-    1: 矛头1（模式 3：speed_3）
+    0: 原点（模式 1：speed_1）
+    1: 矛头1（模式 1：speed_1）
     ...
 特殊功能：
    -1: 旋转180°
@@ -118,7 +116,6 @@ chairman_lidar 功能菜单
    -9: KFS偏置闭环移动
   -10: 左移0.1m/s等待停止信号
   -11: 等待抬升高度变化
-   15: 对准当前梅林区域中心
    16: KFS偏置导航
 输入功能编号；执行时 Ctrl+C 中止当前任务；输入 m 重看菜单；菜单中 q 或 Ctrl+C 退出。
 选择功能编号>
@@ -128,17 +125,16 @@ chairman_lidar 功能菜单
 
 | 模式 | 状态条中的阶段 |
 |---|---|
-| 1 | 基础导航 |
-| 2 | 冲刺 → 精调；起点在切换距离内时直接精调 |
-| 3 | 1/2 提前转正 → 2/2 进入真实目标；关闭提前对齐或满足直接导航分支时显示直接导航 |
+| 1 | 模式1 直接导航，快速档参数 |
+| 2 | 模式2 直接导航，慢速档参数 |
 
-模式 3 的显示示意如下；两行状态条代表同一行在不同时刻的内容：
+任务显示示意如下；两行状态条代表同一行在不同时刻的内容：
 
 ```text
-[任务开始] 编号 1：矛头1（模式 3）
-[===         ] 模式3 1/2 提前转正【矛头1（提前点）】 | 距提前点 0.300m | 朝向误差 2.1° | 1.2s
-[   ===      ] 模式3 2/2 进入真实目标【矛头1】 | 等待 Nav2 执行结果 | 2.0s
-[任务完成] 编号 1：矛头1（模式 3） | 结束位置：模式3 2/2 进入真实目标【矛头1】 | 执行成功；动作已结束，已发送零速度，临时参数已恢复 | 用时 …s
+[任务开始] 编号 1：矛头1（模式 1）
+[===         ] 模式1 直接导航【矛头1】 | 距目标 0.300m | 朝向误差 2.1° | 1.2s
+[   ===      ] 模式1 直接导航【矛头1】 | 等待 Nav2 执行结果 | 2.0s
+[任务完成] 编号 1：矛头1（模式 1） | 结束位置：模式1 直接导航【矛头1】 | 执行成功；动作已结束，已发送零速度，临时参数已恢复 | 用时 …s
 
 chairman_lidar 功能菜单
 定点导航：
@@ -152,7 +148,7 @@ chairman_lidar 功能菜单
 
 成功、中止或失败均先尝试停止动作和恢复参数，再报告 `[任务完成]`、`[任务中止]` 或 `[任务失败]`。结果中的“结束位置”指执行阶段。若停止或恢复尚未确认，结果会说明原因，后续任务在恢复完成前不能继续执行。
 
-模式 2 在精调参数设置成功后更新阶段。模式 3 第一段达到位置容差后，朝向满足容差或近点调整达到时限均可放行；超时放行不代表朝向已对齐。第二段必须等待第一段 Action 返回终态后才能发送。
+两档均只发送最终目标，并等待 Nav2 的动作结果。当前位置和目标的距离只用于显示，不作为任务成功的判据。
 
 选择 -9 或 16 后继续输入：
 
@@ -193,13 +189,13 @@ red:
 ros2 run chairman_config sync --files framework/on_demand/points.yaml
 ```
 
-`pose` 是地图坐标系中的 `[x, y, qz, qw]`，位置单位 m，朝向为平面四元数；`mode` 必须引用已定义模式。编号范围为 0～127，15/16 已用于动态目标。普通点无需新增 Python 文件或登记 `functions.yaml`，由定点导航入口统一处理。
+`pose` 是地图坐标系中的 `[x, y, qz, qw]`，位置单位 m，朝向为平面四元数；`mode` 必须引用已定义模式。编号范围为 0～127，16 已用于动态目标。普通点无需新增 Python 文件或登记 `functions.yaml`，由定点导航入口统一处理。
 
 实车采集点位使用 `ros2 run tool point`，具体采样和保存规则见 [README 的工具说明](../README.md#实车快速标定点位)。
 
 ## 4. 增加新的速度模式
 
-每个速度模式独立配置 Nav2 参数及导航流程。点位的 `mode` 对应模式文件中的 `id`，`name` 用于菜单显示。已有模式使用 `speed_1.yaml`、`speed_2.yaml`、`speed_3.yaml`，字段含义见[内置速度模式](parameter_modification.md#33-改内置速度模式)。
+每个速度模式独立配置 Nav2 参数，共用同一套直接导航流程。点位的 `mode` 对应模式文件中的 `id`，`name` 用于菜单显示。`speed_1.yaml` 为快速档，`speed_2.yaml` 为慢速档，字段含义见[内置速度模式](parameter_modification.md#33-改内置速度模式)。
 
 以新增 `speed_4.yaml` 为例，修改文件链如下：
 
@@ -252,15 +248,7 @@ cp src/config/framework/on_demand/modes/speed_4.yaml src/function/config/on_dema
 "framework/on_demand/modes/speed_4.yaml": "src/function/config/on_demand/modes/speed_4.yaml"
 ```
 
-模式编号使用未占用的 4 及以上整数。程序根据当前文件中的配置选择流程，编号只用于引用。可按所需流程选择复制来源：
-
-| 复制来源 | 本文件需要保留的配置 | 执行流程 |
-|---|---|---|
-| `speed_1.yaml` 或速度模式模板 | `parameters` | 直接导航 |
-| `speed_2.yaml` | `parameters`、`sprint_parameters`、`switch_distance`、`switch_check_period` | 按本模式的距离阈值从冲刺切换到精调 |
-| `speed_3.yaml` | `parameters`、`pre_align` | 按本模式的提前距离及放行条件完成两段导航 |
-
-复制后修改编号、名称和参数，新文件与来源文件互相独立。例如从 `speed_3.yaml` 创建编号 4 后，该模式的提前距离只读取 `speed_4.yaml` 中的 `pre_align.distance`。冲刺与精调两组应完整列出相同的动态参数，分别填写各阶段的值；冲刺精调与提前对齐应配置为不同模式。
+模式编号使用未占用的正整数，例如 4。可完整复制快速档、慢速档或速度模式模板，修改 `id`、`name` 和参数值。每个文件均只包含独立的 `parameters`，统一执行“应用参数 → 发送最终目标 → 等待结果 → 恢复参数”的导航流程；复制后的模式不依赖来源文件。
 
 新增已有 Nav2 参数时，在本文件对应的节点块中按原名填写；参数必须已由远端节点声明并支持动态更新。未列出的字段保持运行中的值。新增控制算法或远端尚未声明的字段，需要同时实现对应 Python 流程或 Nav2 插件逻辑。
 
@@ -352,7 +340,6 @@ def run(ctx, request):
 | `ctx.rotate(angle_degrees)` | 原地闭环旋转，角度单位为度 |
 | `ctx.move(local_x, local_y, distance)` | 沿起始车体方向定距移动，距离单位 m |
 | `ctx.move_offset(offset)` | 根据 KFS 平面偏置闭环移动 |
-| `ctx.align_region(mode=1)` | 导航至当前区域中心 |
 | `ctx.navigate_offset(offset, mode=1)` | 将车体偏置转换为地图导航目标 |
 | `ctx.uphill()` | 使用上坡配置执行运动 |
 | `ctx.stair(x, y, speed, name='登阶')` | 沿指定车体方向登阶，等待停止信号 |
@@ -375,7 +362,7 @@ cp -r docs/templates/continuous/chairman_status_example src/function/detail/cont
 ```
 
 2. 编辑 **`src/function/detail/continuous/chairman_status_example/status_node.py`**，在里面写订阅、定时器等处理逻辑。模板每秒输出一次状态。需要改包名时同步修改本目录 `package.xml`、`CMakeLists.txt`。
-3. 若需要自己的参数，在该包下新建 `config/`，由 CMake 安装并由节点/launch 显式读取。micro-ROS 配置的具体路径、字段和生效步骤见[参数配置文档：micro-ROS 参数](parameter_modification.md#4-micro-ros-参数)；odometry 的初始位姿与区域设置见[参数配置文档：odometry 参数](parameter_modification.md#6-odometry-参数)。单纯创建 YAML 不会自动加载。
+3. 若需要自己的参数，在该包下新建 `config/`，由 CMake 安装并由节点/launch 显式读取。micro-ROS 配置的具体路径、字段和生效步骤见[参数配置文档：micro-ROS 参数](parameter_modification.md#4-micro-ros-参数)；odometry 的初始位姿与点位显示设置见[参数配置文档：odometry 参数](parameter_modification.md#6-odometry-参数)。单纯创建 YAML 不会自动加载。
 4. 构建并启动：
 
 ```bash
