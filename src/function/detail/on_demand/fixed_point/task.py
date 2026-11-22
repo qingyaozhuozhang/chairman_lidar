@@ -107,11 +107,9 @@ def navigate(node, x, y, qz, qw, desc, timeout_sec=None, speed_profile=1,
                 else:
                     px, py, yaw = pose
                     distance = math.hypot(float(x) - px, float(y) - py)
-                    interrupt = is_interrupt(node, distance)
-                    node_px, node_py, node_sign, node_last_time = recovery_action(node, node_px, node_py, node_yaw, node_sign, node_last_time)
                     yaw_error = abs(motion.normalize_angle(yaw_from_qz_qw(node, qz, qw) - yaw))
                     node.task_progress.update(
-                        f'距目标 {distance:.3f}m | 朝向误差 {math.degrees(yaw_error):.1f}° | 是否打断 {interrupt}')
+                        f'距目标 {distance:.3f}m | 朝向误差 {math.degrees(yaw_error):.1f}°')
                 last_progress_time = now_s
             time.sleep(0.01)
 
@@ -135,40 +133,6 @@ def navigate(node, x, y, qz, qw, desc, timeout_sec=None, speed_profile=1,
         node.current_nav_goal_handle = None
         node.task_progress.end_stage(stage_result)
 
-
-def is_interrupt(node, distance):
-    if(distance <= 0.15):
-        msg = Int8()
-        msg.data = 0
-        node.is_interrupt_pub.publish(msg)
-        return msg.data
-    else:
-        msg = Int8()
-        msg.data = 1
-        node.is_interrupt_pub.publish(msg)
-        return msg.data
-    
-def recovery_action(node,node_px,node_py,node_yaw,node_sign,node_last_time):
-    now = time.monotonic()
-    pose = node.get_current_map_pose(timeout_sec=0.0, log_error=False)
-    x,y,yaw = pose
-    if(node_sign == 1):
-        node_px, node_py, node_yaw = pose
-        node_last_time = time.monotonic()
-        node_sign = 0
-        return node_px, node_py, node_sign, node_last_time
-    if(now - node_last_time < 10):
-        dis = math.hypot(float(x) - node_px, float(y) - node_py)
-        if(dis > 0.1):
-            node_sign = 1
-            return node_px, node_py, node_sign, node_last_time
-        return node_px, node_py, node_sign, node_last_time
-    if(now - node_last_time >= 10):
-        msg = Int8()
-        msg.data = 1
-        node.recovery_publish.publish(msg)
-        node_sign = 1
-        return node_px, node_py, node_sign, node_last_time
     
 def begin_parameters(node, mode):
     mode = profile_key(node, mode)
