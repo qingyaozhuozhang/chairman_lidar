@@ -133,7 +133,10 @@ def main(args=None):
                   'save_shutdown_timeout:=300.0', f'rviz:={str(not options.no_rviz).lower()}']
         command = ['bash', '-c', f'source {shlex.quote(str(setup))} && exec {shlex.join(launch)}']
         downsample = [sys.executable, str(root / 'tool/downsample_map.py'),
-                      str(raw_map), str(final_map), '--global-leaf-size', str(options.leaf_size)]
+                      str(raw_map), str(final_map), '--global-leaf-size', str(options.leaf_size),
+                      '--crop',
+                      '--crop-min-xy', '-100.0', '-100.0',
+                      '--crop-max-xy', '100.0', '100.0']
         print(f'原始地图：{raw_map}\n导航地图：{final_map}\n'
               f'建图命令：{shlex.join(command)}\n降采样命令：{shlex.join(downsample)}', flush=True)
         if options.dry_run:

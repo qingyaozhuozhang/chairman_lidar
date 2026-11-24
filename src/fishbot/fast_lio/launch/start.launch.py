@@ -6,6 +6,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch.conditions import IfCondition
+from launch_ros.parameter_descriptions import ParameterValue
 
 from launch_ros.actions import Node
 
@@ -53,6 +54,10 @@ def generate_launch_description():
     # 默认 false，表示 start.launch.py 默认不启动 livox_ros_driver2_node
     # 因为 navigation2.launch.py 里面已经启动了 msg_MID360_launch.py
     start_livox_driver = LaunchConfiguration('start_livox_driver')
+
+    declare_pcd_save_en_cmd = DeclareLaunchArgument(
+        'pcd_save_en',
+        default_value='false')
 
     declare_use_sim_time_cmd = DeclareLaunchArgument(
         'use_sim_time',
@@ -107,7 +112,8 @@ def generate_launch_description():
         executable='fastlio_mapping',
         parameters=[
             PathJoinSubstitution([config_path, config_file]),
-            {'use_sim_time': use_sim_time}
+            {'use_sim_time': use_sim_time,
+             'pcd_save.pcd_save_en': ParameterValue(LaunchConfiguration('pcd_save_en'), value_type=bool)}
         ],
         output='screen'
     )
@@ -127,6 +133,7 @@ def generate_launch_description():
     ld.add_action(declare_rviz_cmd)
     ld.add_action(declare_rviz_config_path_cmd)
     ld.add_action(declare_start_livox_driver_cmd)
+    ld.add_action(declare_pcd_save_en_cmd)
 
     ld.add_action(livox_driver)
     ld.add_action(fast_lio_node)
